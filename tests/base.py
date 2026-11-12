@@ -18,6 +18,20 @@ PASSWORD = "Vizora-Strong-2026!"
 STATUS_CODES = {"in_transit": 8, "out_for_delivery": 31, "failed": 32, "delivered": 41, "returned": 51}
 
 
+class OfflineMaystro:
+    def __init__(self, config=None, attempts=None):
+        self.config = config
+
+    def create_order(self, order):
+        return {"tracking_number": f"MD-{770000 + order.pk}", "external_id": str(order.pk)}
+
+    def fetch_status(self, shipment):
+        return None
+
+    def history(self, maystro_id):
+        return []
+
+
 class RecordingClient(APIClient):
     hits = set()
 
@@ -105,9 +119,15 @@ class ApiTestCase(APITestCase):
         self.assertCode(response, 200)
         return response.data
 
+    def use_offline_maystro(self):
+        patcher = patch("apps.shipping.maystro.LiveMaystroClient", OfflineMaystro)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def shipped_order(self, **overrides):
         order = self.confirmed_order(**overrides)
-        response = self.client.post("/api/shipping/send/", {"order_ids": [order["id"]]})
+        with patch("apps.shipping.maystro.LiveMaystroClient", OfflineMaystro):
+            response = self.client.post("/api/shipping/send/", {"order_ids": [order["id"]]})
         self.assertCode(response, 200)
         self.assertEqual(response.data["failed"], [])
         return order["id"], response.data["sent"][0]["tracking_number"]

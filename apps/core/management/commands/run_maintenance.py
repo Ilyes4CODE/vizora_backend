@@ -3,7 +3,7 @@ from django.core.management.base import BaseCommand
 from apps.core.exceptions import ApiError
 from apps.core.maintenance import run_maintenance
 from apps.shipping.account import sync_account
-from apps.shipping.live import live_mode, refresh_stock
+from apps.shipping.live import live_mode, refresh_money, refresh_stock
 from apps.shipping.models import MaystroConfig
 
 
@@ -14,6 +14,8 @@ class Command(BaseCommand):
         done = run_maintenance({})
         if refresh_stock():
             done.append("stock")
+        if refresh_money():
+            done.append("balance and payments")
         if live_mode() and MaystroConfig.load().mirror_full_sync_at is None:
             try:
                 result = sync_account(full=True)

@@ -13,26 +13,24 @@ from apps.orders.models import Order, OrderStatus
 
 from .account import (
     ORDER_EVENTS,
-    add_manual_payment,
-    balance,
+    delivered_months,
+    maystro_payments,
     mirror_orders,
+    payment_months,
+    real_balance,
     record_payment,
-    remove_manual_payment,
-    set_balance_start,
     start_background_sync,
     summary,
     sync_account,
     sync_status,
     upsert_event,
 )
-from .live import filter_parcels, live_mode, parcel_counts, parcel_history, refresh_parcels, search_parcels
+from .live import filter_parcels, live_mode, parcel_counts, parcel_history, refresh_money, refresh_parcels, search_parcels
 from .maystro import MaystroError, decode_webhook, get_client
 from .models import MaystroConfig, MaystroOrder, MaystroPayment, Shipment
 from .serializers import (
     AccountSyncSerializer,
-    BalanceStartSerializer,
     LiveParcelSerializer,
-    ManualPaymentSerializer,
     ManualStatusSerializer,
     MaystroConfigSerializer,
     MaystroOrderSerializer,
@@ -181,6 +179,8 @@ class MaystroTestView(APIView):
     section = "security"
 
     def post(self, request):
+        if not MaystroConfig.load().encrypted_token:
+            raise conflict("أدخل مفتاح Maystro أولاً في «الحماية والنسخ» ← «ربط Maystro»", "maystro_not_configured")
         try:
             get_client().ping()
         except MaystroError as error:
@@ -212,6 +212,7 @@ class MaystroSummaryView(APIView):
     section = "dues"
 
     def get(self, request):
+        refresh_money()
         return Response(summary(request.query_params))
 
 
@@ -226,37 +227,38 @@ class MaystroOrdersView(generics.ListAPIView):
 
 class MaystroBalanceView(APIView):
     section = "dues"
-    serializer_class = BalanceStartSerializer
 
     def get(self, request):
-        return Response(balance())
-
-    def put(self, request):
-        serializer = BalanceStartSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        start_date = serializer.validated_data["start_date"]
-        result = set_balance_start(start_date)
-        audit.record("maystro_balance_start", f"حدّد بداية حساب رصيد Maystro: {start_date or 'كل الفترة'}", request=request)
-        return Response(result)
+        refresh_money()
+        return Response(real_balance())
 
 
-class MaystroPaymentViewSet(mixins.ListModelMixin, mixins.CreateModelMixin, mixins.DestroyModelMixin, viewsets.GenericViewSet):
+class MaystroPaymentViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
     section = "dues"
     serializer_class = MaystroPaymentSerializer
-    queryset = MaystroPayment.objects.select_related("created_by")
     filter_backends = []
 
-    def create(self, request, *args, **kwargs):
-        serializer = ManualPaymentSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        payment = add_manual_payment(user=request.user, **serializer.validated_data)
-        audit.record("maystro_payment_added", f"سجّل دفعة من Maystro بقيمة {payment.amount} د.ج", request=request, target=payment)
-        return Response(MaystroPaymentSerializer(payment).data, status=status.HTTP_201_CREATED)
+    def get_queryset(self):
+        return maystro_payments(self.request.query_params)
 
-    def perform_destroy(self, instance):
-        amount = instance.amount
-        remove_manual_payment(instance)
-        audit.record("maystro_payment_removed", f"حذف دفعة Maystro بقيمة {amount} د.ج", request=self.request)
+    def list(self, request, *args, **kwargs):
+        refresh_money()
+        return super().list(request, *args, **kwargs)
+
+
+class MaystroPaymentMonthsView(APIView):
+    section = "dues"
+
+    def get(self, request):
+        refresh_money()
+        return Response(payment_months())
+
+
+class MaystroDeliveredMonthsView(APIView):
+    section = "dues"
+
+    def get(self, request):
+        return Response(delivered_months())
 
 
 class SyncCatalogView(APIView):

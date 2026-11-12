@@ -5,7 +5,9 @@ from .views import (
     MaystroAccountSyncView,
     MaystroBalanceView,
     MaystroConfigView,
+    MaystroDeliveredMonthsView,
     MaystroOrdersView,
+    MaystroPaymentMonthsView,
     MaystroPaymentViewSet,
     MaystroSummaryView,
     MaystroTestView,
@@ -30,5 +32,7 @@ urlpatterns = [
     path("shipping/maystro/summary/", MaystroSummaryView.as_view(), name="maystro-account-summary"),
     path("shipping/maystro/orders/", MaystroOrdersView.as_view(), name="maystro-account-orders"),
     path("shipping/maystro/balance/", MaystroBalanceView.as_view(), name="maystro-account-balance"),
+    path("shipping/maystro/payments/months/", MaystroPaymentMonthsView.as_view(), name="maystro-payment-months"),
+    path("shipping/maystro/delivered/months/", MaystroDeliveredMonthsView.as_view(), name="maystro-delivered-months"),
     path("shipping/webhook/<str:token>/", WebhookView.as_view(), name="shipping-webhook"),
 ] + router.urls

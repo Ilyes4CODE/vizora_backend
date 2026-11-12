@@ -82,8 +82,8 @@ class Command(BaseCommand):
 
     def maystro(self):
         config = MaystroConfig.load()
-        if config.mode != MaystroConfig.Mode.LIVE:
-            self.stdout.write(self.style.WARNING("INFO Maystro is in simulation mode, enter the token in the desktop app settings"))
+        if not config.encrypted_token:
+            self.stdout.write(self.style.WARNING("INFO no Maystro token yet, enter it in the desktop app settings"))
             return
 
         def ping():

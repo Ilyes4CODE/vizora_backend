@@ -29,7 +29,7 @@ class ProductViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=["post"], url_path="sync-maystro")
     def sync_maystro(self, request):
         if not refresh_stock(force=True):
-            raise conflict("فعّل الوضع المباشر وأدخل مفتاح Maystro أولاً", "maystro_simulated")
+            raise conflict("أدخل مفتاح Maystro أولاً في «الحماية والنسخ» ← «ربط Maystro»", "maystro_not_configured")
         audit.record("maystro_stock_synced", "حدّث المخزون من Maystro", request=request)
         products = self.filter_queryset(self.get_queryset())
         return Response({"synced_at": MaystroConfig.load().live_stock_at, "products": self.get_serializer(products, many=True).data})

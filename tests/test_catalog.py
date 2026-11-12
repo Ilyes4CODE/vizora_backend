@@ -41,6 +41,7 @@ class ProductTests(ApiTestCase):
         self.assertCode(self.client.post("/api/products/", {"name": "المنتج الأول", "price": 1}), 400)
 
     def test_stock_levels_follow_order_lifecycle(self):
+        self.use_offline_maystro()
         url = f"/api/products/{self.product.pk}/"
         order = self.confirmed_order(items=[{"product": self.product.pk, "quantity": 5}])
         levels = self.client.get(url).data

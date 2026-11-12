@@ -12,7 +12,7 @@ from apps.core.exceptions import ApiError
 from apps.orders.models import OrderEvent, SuiviOutcome
 from apps.orders.services import add_event, next_morning, retry_time
 
-from .account import DELIVERED, GROUPS, page_is_last, sync_products, upsert_rows, whole, without_contact
+from .account import DELIVERED, GROUPS, page_is_last, sync_balance, sync_payments, sync_products, upsert_rows, whole, without_contact
 from .maystro import ACTIVE_STATUSES, NETWORK_ATTEMPTS, STATUS_LABELS, STOP_DESK_DELIVERY, MaystroError, get_client
 from .models import MaystroConfig, MaystroOrder, ParcelCall, Stage
 from .services import apply_status_update, parse_moment
@@ -20,6 +20,7 @@ from .services import apply_status_update, parse_moment
 SUIVI_STATUSES = (32, 42, 33, 31, 22)
 PARCELS_FRESH_SECONDS = 45
 STOCK_FRESH_SECONDS = 300
+MONEY_FRESH_SECONDS = 300
 MAX_LIVE_PAGES = 50
 MAX_SETTLE = 10
 DISPLAY_STAGES = ("transit", "out", "desk", "stuck")
@@ -42,7 +43,7 @@ ALERT_REASONS = {
     "numero incorrect": "رقم الهاتف خاطئ",
 }
 DELIVERY_LABELS = {1: "إلى المنزل", 2: "مكتب التوصيل"}
-_locks = {"parcels": threading.Lock(), "stock": threading.Lock()}
+_locks = {"parcels": threading.Lock(), "stock": threading.Lock(), "money": threading.Lock()}
 _attempted = {}
 
 
@@ -58,7 +59,7 @@ def alert_label(reason):
 
 
 def is_ready(config):
-    return config.mode == MaystroConfig.Mode.LIVE and bool(config.encrypted_token)
+    return bool(config.encrypted_token)
 
 
 def live_mode():
@@ -195,6 +196,35 @@ def refresh_stock(force=False, background=False):
     return locked_stock_pull(config, force)
 
 
+def pull_money(config, force):
+    _attempted["money"] = timezone.now()
+    client = get_client(config, NETWORK_ATTEMPTS if force else 1)
+    try:
+        sync_balance(client)
+        sync_payments(client, full=config.payments_synced_at is None)
+    except MaystroError as error:
+        MaystroConfig.objects.filter(pk=config.pk).update(live_error=error.message[:255])
+        if force:
+            raise ApiError(error.message, error.code, 502) from error
+        return False
+    return True
+
+
+def refresh_money(force=False):
+    config = MaystroConfig.load()
+    if not is_ready(config):
+        return False
+    if not force and not is_due("money", config.balance_at, MONEY_FRESH_SECONDS):
+        return False
+    lock = _locks["money"]
+    if not lock.acquire(blocking=force):
+        return False
+    try:
+        return pull_money(config, force)
+    finally:
+        lock.release()
+
+
 def status_groups(config):
     groups = {}
     for key, stage in config.status_map.items():
@@ -271,7 +301,7 @@ def status_label(row):
 
 def parcel_history(row):
     client = get_client(attempts=1)
-    entries = client.history(row.maystro_id) if hasattr(client, "history") else []
+    entries = client.history(row.maystro_id)
     status_map = MaystroConfig.load().status_map
     events = []
     for index, entry in enumerate(entries):

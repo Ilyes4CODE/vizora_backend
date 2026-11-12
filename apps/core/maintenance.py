@@ -22,7 +22,7 @@ def backup_due(now):
 
 def maystro_ready():
     config = MaystroConfig.load()
-    return config.mode == MaystroConfig.Mode.LIVE and bool(config.encrypted_token)
+    return bool(config.encrypted_token)
 
 
 def attempt(name, job, done):

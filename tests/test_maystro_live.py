@@ -160,9 +160,9 @@ class LiveParcelTests(LiveTestCase):
         self.assertCode(self.client.post(f"/api/shipping/parcels/{parcel.pk}/receive-return/", {"condition": "good"}), 409, "parcel_not_linked")
 
     def test_orders_sent_from_vizora_follow_the_maystro_list(self):
-        self.set_mode("simulated")
+        self.connect(False)
         order_id, tracking = self.shipped_order()
-        self.set_mode("live")
+        self.connect()
         shipment = Shipment.objects.get(tracking_number=tracking)
         row = remote_order(1, 33)
         Shipment.objects.filter(pk=shipment.pk).update(external_id=row["id"])
@@ -172,9 +172,9 @@ class LiveParcelTests(LiveTestCase):
         self.assertEqual(shipment.stage, "desk")
 
     def test_linked_return_is_received_through_the_live_list(self):
-        self.set_mode("simulated")
+        self.connect(False)
         order_id, tracking = self.shipped_order()
-        self.set_mode("live")
+        self.connect()
         row = remote_order(1, 31)
         Shipment.objects.filter(tracking_number=tracking).update(external_id=row["id"], stage="returned")
         self.call(LiveMaystro([row]), "get", "/api/shipping/parcels/")
@@ -238,17 +238,17 @@ class LiveSuiviTests(LiveTestCase):
         self.assertIsNotNone(MaystroOrder.objects.get(pk=parcel_id).suivi_next_at)
 
     def test_call_on_a_parcel_sent_from_vizora_lands_in_the_order_log(self):
-        self.set_mode("simulated")
+        self.connect(False)
         order_id, tracking = self.shipped_order()
-        self.set_mode("live")
+        self.connect()
         row = remote_order(1, 31)
         Shipment.objects.filter(tracking_number=tracking).update(external_id=row["id"])
         parcel_id = self.queue(LiveMaystro([row]))[0]["id"]
         self.assertCode(self.client.post(f"/api/confirmation/parcels/{parcel_id}/outcome/", {"outcome": "no_answer"}), 200)
         self.assertTrue(Order.objects.get(pk=order_id).events.filter(stage="suivi", outcome="no_answer").exists())
 
-    def test_simulated_mode_keeps_the_local_suivi(self):
-        self.set_mode("simulated")
+    def test_without_a_token_the_suivi_stays_local(self):
+        self.connect(False)
         with patch("apps.shipping.maystro.requests.request") as mocked:
             response = self.client.get("/api/confirmation/queue/", {"stage": "suivi"})
         self.assertCode(response, 200)
@@ -330,9 +330,9 @@ class LiveStockTests(LiveTestCase):
         mocked.assert_not_called()
         self.assertEqual(started, [True])
 
-    def test_sync_button_needs_live_mode(self):
-        self.set_mode("simulated")
-        self.assertCode(self.client.post("/api/products/sync-maystro/"), 409, "maystro_simulated")
+    def test_sync_button_needs_a_token(self):
+        self.connect(False)
+        self.assertCode(self.client.post("/api/products/sync-maystro/"), 409, "maystro_not_configured")
         self.assertEqual(self.client.get("/api/products/").data[0]["stock_source"], "local")
 
     def test_unlinked_or_deleted_products_keep_local_stock(self):

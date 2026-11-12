@@ -84,7 +84,6 @@ class CronFullSyncTests(ApiTestCase):
         backups.enable()
         self.addCleanup(backups.disable)
         config = MaystroConfig.load()
-        config.mode = MaystroConfig.Mode.LIVE
         config.set_token("synthetic-token")
         config.save()
 
@@ -134,7 +133,7 @@ class CheckServerTests(ApiTestCase):
         text, ok = self.run_check(domain="backend.vizorawear.com")
         self.assertTrue(ok, text)
         self.assertIn("server is ready", text)
-        self.assertIn("simulation mode", text)
+        self.assertIn("no Maystro token yet", text)
         self.assertNotIn("FAIL", text)
 
     def test_missing_admin_and_wrong_domain_are_reported(self):

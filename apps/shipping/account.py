@@ -1,22 +1,21 @@
 import hashlib
+import re
 import threading
-import uuid
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
-from datetime import time as datetime_time
-from datetime import timedelta
+from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 
 from django.db import connection, transaction
-from django.db.models import BigIntegerField, Count, Q, Sum, Value
-from django.db.models.functions import Coalesce, TruncDate
+from django.db.models import Count, Q, Sum
+from django.db.models.functions import Coalesce, TruncDate, TruncMonth
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
-from apps.core.dates import local_datetime, parse_day
+from apps.core.dates import local_datetime, month_bounds, parse_day
 from apps.core.exceptions import ApiError, conflict
 
-from .maystro import ACTIVE_STATUSES, STATUS_LABELS, MaystroError, get_client
+from .maystro import ACTIVE_STATUSES, MAX_PAYMENT_PAGES, STATUS_LABELS, MaystroError, get_client
 from .models import MaystroConfig, MaystroOrder, MaystroPayment, MaystroProduct, Shipment
 from .services import parse_moment
 
@@ -74,10 +73,10 @@ GROUPS = {
 }
 CANCELLED_LABELS = {True: "أُلغي بعد الشحن (رجع)", False: "أُلغي قبل الشحن"}
 NOTES = [
-    "Maystro لا يوفر رصيدك ولا رسوم الإرجاع عبر الواجهة البرمجية، وحقل «مدفوع للمتجر» عندهم لا يتحدّث، لذلك «المتبقي عند Maystro» تقدير فقط: قارنه دائماً مع بوابة Maystro.",
-    "التقدير = قيمة المنتجات في الطرود المسلّمة − الدفعات المسجّلة − رسوم الإرجاع المقدّرة (عدد الطرود الراجعة × رسم الإرجاع في الإعدادات، أو الرسم الحقيقي إن أرسله Maystro).",
-    "سجّل كل دفعة تستلمها من Maystro، ولا تسجّل يدوياً دفعة وصل إشعارها من Maystro حتى لا تُحسب مرتين.",
+    "الرصيد والدفعات تُقرأ مباشرة من Maystro، وتتحدّث كل بضع دقائق.",
+    "«ملغاة» عند Maystro تشمل الطرود التي رجعت بعد الشحن والطلبيات الملغاة قبله.",
 ]
+MONTH_PATTERN = re.compile(r"^(\d{4})-(\d{2})$")
 
 
 def money(value):
@@ -291,6 +290,39 @@ def refresh_points(client):
     return None
 
 
+def sync_balance(client):
+    data = client.balance()
+    MaystroConfig.objects.filter(pk=MaystroConfig.load().pk).update(
+        balance_current=money(data["current"]), balance_payable=money(data["payable"]), balance_at=timezone.now()
+    )
+    return data
+
+
+def sync_payments(client, full=False):
+    created = 0
+    for page in range(1, MAX_PAYMENT_PAGES + 1):
+        data = client.payments(page)
+        fresh = 0
+        for row in data["results"]:
+            if not row.get("id"):
+                continue
+            _, made = MaystroPayment.objects.update_or_create(
+                fingerprint=f"maystro:{row['id']}",
+                defaults={
+                    "source": MaystroPayment.Source.MAYSTRO,
+                    "paid_on": parse_moment(row.get("payment_date")) or timezone.now(),
+                    "orders_count": whole(row.get("nb_orders")) or 0,
+                    "amount": money(row.get("amount")),
+                },
+            )
+            fresh += int(made)
+        created += fresh
+        if not data["results"] or not data["next"] or (not full and fresh < len(data["results"])):
+            break
+    MaystroConfig.objects.filter(pk=MaystroConfig.load().pk).update(payments_synced_at=timezone.now())
+    return created
+
+
 def claim_sync_slot():
     now = timezone.now()
     with transaction.atomic():
@@ -310,8 +342,8 @@ def sync_is_running(config):
 
 
 def claim_live_slot():
-    if MaystroConfig.load().mode != MaystroConfig.Mode.LIVE:
-        raise conflict("فعّل الوضع المباشر وأدخل مفتاح Maystro أولاً", "maystro_simulated")
+    if not MaystroConfig.load().encrypted_token:
+        raise conflict("أدخل مفتاح Maystro أولاً في «الحماية والنسخ» ← «ربط Maystro»", "maystro_not_configured")
     return claim_sync_slot()
 
 
@@ -354,6 +386,8 @@ def perform_sync(config, full):
         result = pull_orders(client, full, progress=lambda done, total: MaystroConfig.objects.filter(pk=config.pk).update(mirror_progress_done=done, mirror_progress_total=total, mirror_running_since=timezone.now()))
         result["products"] = sync_products(client)
         result["points"] = refresh_points(client)
+        result["payments"] = sync_payments(client, full)
+        sync_balance(client)
     except MaystroError as error:
         MaystroConfig.objects.filter(pk=config.pk).update(mirror_sync_ok=False, mirror_sync_error=error.message[:255], mirror_running_since=None)
         raise ApiError(error.message, error.code, 502) from error
@@ -401,15 +435,6 @@ def totals(queryset):
     return {key: value or 0 for key, value in result.items()}
 
 
-def return_fee_totals(queryset, fee):
-    result = queryset.aggregate(
-        count=Count("id"),
-        known=Count("id", filter=~Q(return_fees=None)),
-        amount=Sum(Coalesce("return_fees", Value(fee, output_field=BigIntegerField()))),
-    )
-    return {key: value or 0 for key, value in result.items()}
-
-
 def outcome_of(status, shipped):
     if status == DELIVERED:
         return "delivered"
@@ -454,63 +479,74 @@ def product_breakdown(queryset):
     return sorted(rows, key=lambda row: row["orders"], reverse=True)
 
 
-def status_row(key, status, label, count, amount):
-    return {"key": key, "status": status, "label": label, "count": count, "amount": amount or 0}
-
-
 def status_breakdown(orders):
-    rows = []
-    for row in orders.order_by().values("status").annotate(count=Count("id"), amount=Sum("product_price")):
-        if row["status"] != CANCELLED:
-            label = STATUS_LABELS.get(str(row["status"]), str(row["status"]))
-            rows.append(status_row(str(row["status"]), row["status"], label, row["count"], row["amount"]))
-            continue
-        for shipped in (True, False):
-            part = orders.filter(status=CANCELLED, shipped_at__isnull=not shipped).aggregate(count=Count("id"), amount=Sum("product_price"))
-            if part["count"]:
-                key = "50_returned" if shipped else "50_cancelled"
-                rows.append(status_row(key, CANCELLED, CANCELLED_LABELS[shipped], part["count"], part["amount"]))
-    return sorted(rows, key=lambda row: (-row["count"], row["key"]))
+    rows = orders.order_by().values("status").annotate(count=Count("id"), amount=Sum("product_price"))
+    result = [
+        {"key": str(row["status"]), "status": row["status"], "label": STATUS_LABELS.get(str(row["status"]), str(row["status"])), "count": row["count"], "amount": row["amount"] or 0}
+        for row in rows
+    ]
+    return sorted(result, key=lambda row: (-row["count"], row["key"]))
 
 
-def balance_scope(config):
-    delivered = MaystroOrder.objects.filter(GROUPS["delivered"])
-    returned = MaystroOrder.objects.filter(GROUPS["returned"])
-    payments = MaystroPayment.objects.all()
-    start = config.balance_start_date
-    if start:
-        moment = local_datetime(start)
-        delivered = delivered.filter(Q(delivered_at__gte=moment) | Q(delivered_at=None, ordered_at__gte=moment))
-        returned = returned.filter(Q(shipped_at__gte=moment) | Q(shipped_at=None, ordered_at__gte=moment))
-        payments = payments.filter(paid_on__gte=moment)
-    return delivered, returned, payments
-
-
-def balance(config=None):
+def real_balance(config=None):
     config = config or MaystroConfig.load()
-    delivered, returned, payments = balance_scope(config)
-    value = totals(delivered)
-    fees = return_fee_totals(returned, config.return_fee)
-    paid = payments.aggregate(amount=Sum("amount"), count=Count("id"))
-    paid_amount = paid["amount"] or 0
+    last = MaystroPayment.objects.filter(source=MaystroPayment.Source.MAYSTRO).order_by("-paid_on", "-id").first()
     return {
-        "start_date": config.balance_start_date,
-        "delivered_value": value["price"],
-        "delivered_orders": value["count"],
-        "returned_orders": fees["count"],
-        "return_fee_per_order": config.return_fee,
-        "return_fees_known_orders": fees["known"],
-        "estimated_return_fees": fees["amount"],
-        "paid_to_you": paid_amount,
-        "payments_count": paid["count"],
-        "estimated_held": value["price"] - paid_amount - fees["amount"],
-        "is_estimate": True,
+        "current": config.balance_current,
+        "payable": config.balance_payable,
+        "updated_at": config.balance_at,
+        "last_payment": {"paid_on": last.paid_on, "amount": last.amount, "orders_count": last.orders_count} if last else None,
     }
 
 
-def set_balance_start(start_date):
-    MaystroConfig.objects.filter(pk=MaystroConfig.load().pk).update(balance_start_date=start_date)
-    return balance()
+def parse_month(value, field="month"):
+    match = MONTH_PATTERN.match(value or "")
+    if not match or not 1 <= int(match.group(2)) <= 12:
+        raise ValidationError({field: "اكتب الشهر بالشكل 2026-11"})
+    return date(int(match.group(1)), int(match.group(2)), 1)
+
+
+def month_key(moment):
+    return timezone.localtime(moment).strftime("%Y-%m") if timezone.is_aware(moment) else moment.strftime("%Y-%m")
+
+
+def maystro_payments(params):
+    queryset = MaystroPayment.objects.filter(source=MaystroPayment.Source.MAYSTRO)
+    month = params.get("month")
+    if month:
+        start, end = month_bounds(parse_month(month))
+        queryset = queryset.filter(paid_on__gte=start, paid_on__lt=end)
+    return queryset.order_by("-paid_on", "-id")
+
+
+def payment_months():
+    rows = (
+        MaystroPayment.objects.filter(source=MaystroPayment.Source.MAYSTRO)
+        .annotate(month=TruncMonth("paid_on"))
+        .values("month")
+        .annotate(payments=Count("id"), orders=Sum("orders_count"), amount=Sum("amount"))
+        .order_by("-month")
+    )
+    return [{"month": month_key(row["month"]), "payments": row["payments"], "orders": row["orders"] or 0, "amount": row["amount"] or 0} for row in rows]
+
+
+def delivered_orders():
+    return MaystroOrder.objects.filter(GROUPS["delivered"]).annotate(done_at=Coalesce("delivered_at", "ordered_at"))
+
+
+def delivered_months():
+    rows = (
+        delivered_orders()
+        .exclude(done_at=None)
+        .annotate(month=TruncMonth("done_at"))
+        .values("month")
+        .annotate(orders=Count("id"), value=Sum("product_price"), fees=Sum("delivery_price"), total=Sum("total_price"))
+        .order_by("-month")
+    )
+    return [
+        {"month": month_key(row["month"]), "orders": row["orders"], "product_value": row["value"] or 0, "delivery_fees": row["fees"] or 0, "total": row["total"] or 0}
+        for row in rows
+    ]
 
 
 def wilaya_breakdown(orders):
@@ -569,8 +605,8 @@ def summary(params):
     returned_orders = orders.filter(GROUPS["returned"])
     returned = returned_orders.count()
     cancelled = orders.filter(GROUPS["cancelled"]).count()
-    fees = return_fee_totals(returned_orders, config.return_fee)
-    paid = in_period(MaystroPayment.objects.all(), first, last, field="paid_on").aggregate(amount=Sum("amount"), count=Count("id"))
+    payments = MaystroPayment.objects.filter(source=MaystroPayment.Source.MAYSTRO)
+    paid = in_period(payments, first, last, field="paid_on").aggregate(amount=Sum("amount"), count=Count("id"), orders=Sum("orders_count"))
     return {
         "period": {"from": first, "to": last},
         "sync": sync_status(config),
@@ -583,10 +619,9 @@ def summary(params):
             "in_delivery_orders": active["count"],
             "paid_to_you": paid["amount"] or 0,
             "payments_count": paid["count"],
-            "estimated_return_fees": fees["amount"],
-            "return_fees_known_orders": fees["known"],
+            "paid_orders": paid["orders"] or 0,
         },
-        "balance": balance(config),
+        "balance": real_balance(config),
         "counts": {
             "total": orders.count(),
             "delivered": delivered["count"],
@@ -609,6 +644,14 @@ def summary(params):
 
 
 def mirror_orders(params):
+    delivered_month = params.get("delivered_month")
+    if delivered_month:
+        start, end = month_bounds(parse_month(delivered_month, "delivered_month"))
+        queryset = delivered_orders().filter(done_at__gte=start, done_at__lt=end)
+        search = (params.get("search") or "").strip()
+        if search:
+            queryset = queryset.filter(Q(display_id__icontains=search) | Q(product_names__icontains=search))
+        return queryset.order_by("-done_at", "-id")
     first, last = period_bounds(params)
     queryset = in_period(MaystroOrder.objects.all(), first, last)
     group = params.get("group")
@@ -642,23 +685,6 @@ def record_payment(payload):
         payment.amount = matched.filter(is_refund=False).aggregate(value=Sum("product_price"))["value"] or 0
         payment.save(update_fields=["amount"])
     return created, matched.count()
-
-
-def add_manual_payment(amount, paid_on, note, user):
-    return MaystroPayment.objects.create(
-        fingerprint=f"manual-{uuid.uuid4().hex}",
-        source=MaystroPayment.Source.MANUAL,
-        paid_on=local_datetime(paid_on, datetime_time(12)),
-        amount=amount,
-        note=note,
-        created_by=user,
-    )
-
-
-def remove_manual_payment(payment):
-    if payment.source != MaystroPayment.Source.MANUAL:
-        raise conflict("هذه الدفعة وصلت من Maystro ولا يمكن حذفها", "payment_locked")
-    payment.delete()
 
 
 def upsert_event(payload):

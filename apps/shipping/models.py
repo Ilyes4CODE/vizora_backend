@@ -42,11 +42,6 @@ def default_status_map():
 
 
 class MaystroConfig(SingletonModel):
-    class Mode(models.TextChoices):
-        SIMULATED = "simulated", "محاكاة"
-        LIVE = "live", "مباشر"
-
-    mode = models.CharField(max_length=10, choices=Mode.choices, default=Mode.SIMULATED)
     store_id = models.CharField(max_length=64, blank=True)
     encrypted_token = models.TextField(blank=True)
     status_map = models.JSONField(default=default_status_map)
@@ -56,6 +51,10 @@ class MaystroConfig(SingletonModel):
     live_parcels_at = models.DateTimeField(null=True, blank=True)
     live_stock_at = models.DateTimeField(null=True, blank=True)
     live_error = models.CharField(max_length=255, blank=True)
+    balance_current = models.BigIntegerField(null=True, blank=True)
+    balance_payable = models.BigIntegerField(null=True, blank=True)
+    balance_at = models.DateTimeField(null=True, blank=True)
+    payments_synced_at = models.DateTimeField(null=True, blank=True)
     last_sync_ok = models.BooleanField(default=True)
     last_sync_error = models.CharField(max_length=255, blank=True)
     current_points = models.FloatField(null=True, blank=True)
@@ -107,6 +106,7 @@ class MaystroPayment(models.Model):
     class Source(models.TextChoices):
         MANUAL = "manual", "مسجّل يدوياً"
         WEBHOOK = "webhook", "إشعار من Maystro"
+        MAYSTRO = "maystro", "من Maystro"
 
     fingerprint = models.CharField(max_length=64, unique=True)
     source = models.CharField(max_length=10, choices=Source.choices, default=Source.WEBHOOK)

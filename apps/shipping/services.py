@@ -166,7 +166,7 @@ def mirror_status(shipment, fresh_after):
 def run_mirror_sync(config):
     from .account import sync_account
 
-    if config.mode != MaystroConfig.Mode.LIVE or config.mirror_full_sync_at is None:
+    if not config.encrypted_token or config.mirror_full_sync_at is None:
         return None
     try:
         return sync_account(full=False)
@@ -178,11 +178,13 @@ def run_mirror_sync(config):
 
 def sync_parcels():
     config = MaystroConfig.load()
+    if not config.encrypted_token:
+        raise conflict("أدخل مفتاح Maystro أولاً في «الحماية والنسخ» ← «ربط Maystro»", "maystro_not_configured")
     client = get_client(config)
     checked = changed = 0
     started = timezone.now()
     mirror = run_mirror_sync(config)
-    if config.mode == MaystroConfig.Mode.LIVE:
+    if config.encrypted_token:
         from .live import refresh_parcels
 
         try:
@@ -265,8 +267,8 @@ def sync_wilaya(wilaya, remote, client):
 
 def sync_catalog():
     config = MaystroConfig.load()
-    if config.mode != MaystroConfig.Mode.LIVE:
-        raise conflict("فعّل الوضع المباشر وأدخل مفتاح Maystro أولاً", "maystro_simulated")
+    if not config.encrypted_token:
+        raise conflict("أدخل مفتاح Maystro أولاً في «الحماية والنسخ» ← «ربط Maystro»", "maystro_not_configured")
     client = get_client(config)
     try:
         served = {int(item["code"]): item for item in client.wilayas() if isinstance(item, dict) and item.get("code")}

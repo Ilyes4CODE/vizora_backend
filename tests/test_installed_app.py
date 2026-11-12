@@ -84,14 +84,13 @@ class MaintenanceTests(ApiTestCase):
         self.assertEqual(run_maintenance({}), ["backup"])
         self.assertEqual(Backup.objects.filter(kind=Backup.Kind.AUTO).count(), 2)
 
-    def test_maystro_updates_only_in_live_mode_every_half_hour(self):
+    def test_maystro_updates_only_with_a_token_every_half_hour(self):
         run_maintenance({})
         state = {}
         with patch("apps.core.maintenance.sync_parcels") as parcels:
             self.assertEqual(run_maintenance(state), [])
             parcels.assert_not_called()
             config = MaystroConfig.load()
-            config.mode = MaystroConfig.Mode.LIVE
             config.set_token("secret-token")
             config.save()
             now = timezone.now()
@@ -104,7 +103,6 @@ class MaintenanceTests(ApiTestCase):
         from apps.core.exceptions import ApiError
 
         config = MaystroConfig.load()
-        config.mode = MaystroConfig.Mode.LIVE
         config.set_token("secret-token")
         config.save()
         with patch("apps.core.maintenance.sync_parcels", side_effect=ApiError("تعذّر الاتصال بخادم Maystro", "maystro_unreachable", 502)):

@@ -15,7 +15,7 @@ DEFAULT_THRESHOLD = 50
 
 def live_config():
     config = MaystroConfig.load()
-    return config if config.mode == MaystroConfig.Mode.LIVE else None
+    return config if config.encrypted_token else None
 
 
 def remote_product(product, config=None):
@@ -23,7 +23,7 @@ def remote_product(product, config=None):
         return None
     if config is None:
         config = live_config()
-    if config is None or config.mode != MaystroConfig.Mode.LIVE:
+    if config is None or not config.encrypted_token:
         return None
     return MaystroProduct.objects.filter(maystro_id=product.courier_ref, deleted=False).first()
 

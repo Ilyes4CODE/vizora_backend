@@ -5,7 +5,7 @@ from datetime import timedelta
 from unittest.mock import MagicMock, patch
 
 import requests
-from django.core.management import call_command
+from django.core.management import CommandError, call_command
 from django.utils import timezone
 
 from apps.catalog.models import Product
@@ -18,6 +18,10 @@ from .base import ApiTestCase
 
 
 class SendingTests(ApiTestCase):
+    def setUp(self):
+        super().setUp()
+        self.use_offline_maystro()
+
     def test_send_confirmed_order(self):
         order = self.confirmed_order(items=[{"product": self.product.pk, "quantity": 3}])
         response = self.client.post("/api/shipping/send/", {"order_ids": [order["id"]]})
@@ -258,7 +262,6 @@ class ConfigAndLiveClientTests(ApiTestCase):
 
     def enable_live(self, token="secret-token"):
         config = MaystroConfig.load()
-        config.mode = "live"
         config.set_token(token)
         config.save()
         return config
@@ -279,7 +282,6 @@ class ConfigAndLiveClientTests(ApiTestCase):
     def test_config_read_update_masks_token(self):
         response = self.client.get("/api/shipping/config/")
         self.assertCode(response, 200)
-        self.assertEqual(response.data["mode"], "simulated")
         self.assertFalse(response.data["has_token"])
         self.assertEqual(response.data["status_map"]["41"], "delivered")
         self.assertTrue(response.data["webhook_path"].startswith("/api/shipping/webhook/"))
@@ -295,17 +297,11 @@ class ConfigAndLiveClientTests(ApiTestCase):
         self.assertCode(self.client.put("/api/shipping/config/", {"status_map": {"4": "nowhere"}}), 400)
         self.assertCode(self.client.put("/api/shipping/config/", {"status_map": {"41": "delivered"}}), 200)
 
-    def test_simulated_connection_and_sync(self):
-        self.assertEqual(self.client.post("/api/shipping/config/test/").data, {"connected": True})
+    def test_without_a_token_maystro_actions_explain_what_to_do(self):
         self.shipped_order()
-        response = self.client.post("/api/shipping/sync/")
-        self.assertCode(response, 200)
-        self.assertEqual((response.data["checked"], response.data["changed"]), (1, 0))
-        self.assertTrue(MaystroConfig.load().last_sync_ok)
-
-    def test_live_mode_requires_token(self):
-        self.enable_live(token="")
-        self.assertCode(self.client.post("/api/shipping/config/test/"), 502, "maystro_not_configured")
+        for url in ("/api/shipping/config/test/", "/api/shipping/sync/", "/api/shipping/config/sync-catalog/", "/api/shipping/maystro/sync/", "/api/products/sync-maystro/"):
+            self.assertCode(self.client.post(url), 409, "maystro_not_configured")
+        self.assertEqual(self.client.get("/api/shipping/config/").data["has_token"], False)
 
     @patch("apps.shipping.maystro.requests.request")
     def test_connection_test_uses_documented_endpoint(self, mocked):
@@ -506,7 +502,7 @@ class ConfigAndLiveClientTests(ApiTestCase):
             self.assertCode(self.client.post("/api/shipping/config/sync-catalog/"), 502, "maystro_rejected")
 
     def test_catalog_sync_requires_live_mode(self):
-        self.assertCode(self.client.post("/api/shipping/config/sync-catalog/"), 409, "maystro_simulated")
+        self.assertCode(self.client.post("/api/shipping/config/sync-catalog/"), 409, "maystro_not_configured")
 
     def test_catalog_sync_reports_failure(self):
         self.enable_live()
@@ -516,8 +512,13 @@ class ConfigAndLiveClientTests(ApiTestCase):
     def test_sync_command(self):
         self.shipped_order()
         with open(os.devnull, "w", encoding="utf-8") as sink:
-            call_command("sync_maystro", stdout=sink)
+            with self.assertRaises(CommandError):
+                call_command("sync_maystro", stdout=sink)
+            self.enable_live()
+            with patch("apps.shipping.maystro.requests.request", return_value=self.fake_response(payload=[])):
+                call_command("sync_maystro", stdout=sink)
         self.assertIsNotNone(MaystroConfig.load().last_sync_at)
+        self.assertTrue(MaystroConfig.load().last_sync_ok)
 
 
 class MaystroMoneyTests(ApiTestCase):
@@ -549,55 +550,71 @@ class MaystroMoneyTests(ApiTestCase):
         self.mirror(6, 31, 6000)
         self.mirror(7, 41, 9000, delivered_days_ago=1, refund=True)
 
-    def test_balance_is_delivered_minus_payments_minus_return_fees(self):
-        self.seed()
-        added = self.client.post("/api/shipping/maystro/payments/", {"amount": 4000, "paid_on": timezone.localdate().isoformat(), "note": "تحويل"})
-        self.assertCode(added, 201)
-        self.assertEqual((added.data["source"], added.data["amount"]), ("manual", 4000))
-        data = self.client.get("/api/shipping/maystro/balance/").data
-        self.assertEqual((data["delivered_value"], data["delivered_orders"]), (8000, 2))
-        self.assertEqual((data["returned_orders"], data["estimated_return_fees"], data["return_fees_known_orders"]), (2, 500, 1))
-        self.assertEqual((data["paid_to_you"], data["estimated_held"], data["is_estimate"]), (4000, 3500, True))
-        listing = self.client.get("/api/shipping/maystro/payments/")
-        self.assertCode(listing, 200)
-        self.assertEqual(listing.data["results"][0]["created_by_name"], "أمين بوزيد")
+    def paid(self, number, amount, orders, days_ago):
+        return MaystroPayment.objects.create(
+            fingerprint=f"maystro:p-{number}", source="maystro", paid_on=timezone.now() - timedelta(days=days_ago), amount=amount, orders_count=orders
+        )
 
-    def test_status_50_splits_into_returned_and_cancelled(self):
+    def test_balance_is_the_one_maystro_reports(self):
+        self.seed()
+        MaystroConfig.objects.filter(pk=MaystroConfig.load().pk).update(balance_current=322200, balance_payable=290650, balance_at=timezone.now())
+        self.paid(1, 60500, 5, days_ago=3)
+        self.paid(2, 169600, 17, days_ago=4)
+        data = self.client.get("/api/shipping/maystro/balance/").data
+        self.assertEqual((data["current"], data["payable"]), (322200, 290650))
+        self.assertEqual((data["last_payment"]["amount"], data["last_payment"]["orders_count"]), (60500, 5))
+        self.assertEqual(dict(self.client.get("/api/shipping/maystro/summary/").data["balance"]), dict(data))
+
+    def test_status_50_is_one_row_like_maystro(self):
         self.seed()
         data = self.client.get("/api/shipping/maystro/summary/").data
         counts = data["counts"]
         self.assertEqual((counts["delivered"], counts["returned"], counts["cancelled"], counts["shipped"], counts["refunds"]), (2, 2, 1, 4, 1))
         self.assertEqual((data["delivery_rate"], data["shipped_delivery_rate"]), (40.0, 50.0))
-        keys = {row["key"] for row in data["by_status"]}
-        self.assertTrue({"50_returned", "50_cancelled", "41", "52", "31"} <= keys)
+        rows = {row["key"]: row for row in data["by_status"]}
+        self.assertEqual(rows["50"]["count"], 2)
+        self.assertNotIn("50_returned", rows)
         self.assertEqual(data["money"]["delivered_value"], 8000)
         self.assertEqual(data["money"]["in_delivery"], 6000)
-        self.assertEqual(data["by_product"][0]["shipped_delivery_rate"], 50.0)
         orders = self.client.get("/api/shipping/maystro/orders/", {"group": "returned"}).data["results"]
         self.assertEqual({row["display_id"] for row in orders}, {"D3", "D5"})
-        self.assertEqual({row["outcome"] for row in orders}, {"returned"})
 
-    def test_start_date_excludes_older_history(self):
+    def test_payments_by_date_and_by_month(self):
+        today = timezone.localdate()
+        self.paid(1, 60500, 5, days_ago=0)
+        self.paid(2, 169600, 17, days_ago=1)
+        self.paid(3, 505700, 50, days_ago=40)
+        MaystroPayment.objects.create(fingerprint="w" * 64, source="webhook", paid_on=timezone.now(), amount=1)
+        listing = self.client.get("/api/shipping/maystro/payments/").data
+        self.assertEqual([row["amount"] for row in listing["results"]], [60500, 169600, 505700])
+        self.assertEqual(set(listing["results"][0]), {"id", "source", "source_label", "paid_on", "amount", "orders_count"})
+        months = self.client.get("/api/shipping/maystro/payments/months/").data
+        this_month = today.strftime("%Y-%m")
+        self.assertEqual(sum(row["amount"] for row in months), 60500 + 169600 + 505700)
+        self.assertEqual(sum(row["payments"] for row in months), 3)
+        self.assertEqual(months[0]["month"], this_month if (today - timedelta(days=1)).month == today.month else months[0]["month"])
+        chosen = self.client.get("/api/shipping/maystro/payments/", {"month": months[-1]["month"]}).data
+        self.assertEqual(sum(row["amount"] for row in chosen["results"]), months[-1]["amount"])
+        self.assertCode(self.client.get("/api/shipping/maystro/payments/", {"month": "2026-13"}), 400, "validation_error")
+
+    def test_delivered_by_month_with_amounts(self):
         self.seed()
-        old_day = (timezone.localdate() - timedelta(days=30)).isoformat()
-        self.client.post("/api/shipping/maystro/payments/", {"amount": 1000, "paid_on": old_day})
-        start = (timezone.localdate() - timedelta(days=5)).isoformat()
-        response = self.client.put("/api/shipping/maystro/balance/", {"start_date": start}, format="json")
-        self.assertCode(response, 200)
-        self.assertEqual(str(response.data["start_date"]), start)
-        self.assertEqual((response.data["delivered_value"], response.data["paid_to_you"], response.data["returned_orders"]), (3000, 0, 0))
-        cleared = self.client.put("/api/shipping/maystro/balance/", {"start_date": None}, format="json")
-        self.assertEqual((cleared.data["start_date"], cleared.data["paid_to_you"]), (None, 1000))
+        months = self.client.get("/api/shipping/maystro/delivered/months/").data
+        self.assertEqual(sum(row["orders"] for row in months), 2)
+        self.assertEqual(sum(row["product_value"] for row in months), 8000)
+        self.assertEqual(sum(row["delivery_fees"] for row in months), 800)
+        self.assertEqual(sum(row["total"] for row in months), 8800)
+        month = months[0]["month"]
+        listed = self.client.get("/api/shipping/maystro/orders/", {"delivered_month": month}).data
+        self.assertEqual(listed["count"], months[0]["orders"])
+        self.assertTrue(all(row["outcome"] == "delivered" for row in listed["results"]))
+        self.assertCode(self.client.get("/api/shipping/maystro/orders/", {"delivered_month": "nope"}), 400, "validation_error")
 
-    def test_only_manual_payments_can_be_deleted(self):
-        manual = self.client.post("/api/shipping/maystro/payments/", {"amount": 700, "paid_on": "2026-11-01"}).data
-        self.assertCode(self.client.delete(f"/api/shipping/maystro/payments/{manual['id']}/"), 204)
-        webhook = MaystroPayment.objects.create(fingerprint="f" * 64, paid_on=timezone.now(), amount=100)
-        self.assertCode(self.client.delete(f"/api/shipping/maystro/payments/{webhook.pk}/"), 409, "payment_locked")
-
-    def test_payment_validation(self):
-        self.assertCode(self.client.post("/api/shipping/maystro/payments/", {"amount": 0, "paid_on": "2026-11-01"}), 400)
-        self.assertCode(self.client.post("/api/shipping/maystro/payments/", {"amount": 10, "paid_on": "nope"}), 400)
+    def test_payments_are_read_only(self):
+        self.assertCode(self.client.post("/api/shipping/maystro/payments/", {"amount": 700, "paid_on": "2026-11-01"}), 405)
+        payment = self.paid(1, 100, 1, days_ago=0)
+        self.assertCode(self.client.delete(f"/api/shipping/maystro/payments/{payment.pk}/"), 404)
+        self.assertTrue(MaystroPayment.objects.filter(pk=payment.pk).exists())
 
     def test_money_requires_dues_section(self):
         self.as_user(self.agent)
@@ -606,7 +623,8 @@ class MaystroMoneyTests(ApiTestCase):
             ("get", "/api/shipping/maystro/orders/"),
             ("get", "/api/shipping/maystro/balance/"),
             ("get", "/api/shipping/maystro/payments/"),
-            ("post", "/api/shipping/maystro/payments/"),
+            ("get", "/api/shipping/maystro/payments/months/"),
+            ("get", "/api/shipping/maystro/delivered/months/"),
         ):
             self.assertCode(getattr(self.client, method)(url), 403)
         self.assertNotIn("current_points", self.client.get("/api/shipping/config/").data)

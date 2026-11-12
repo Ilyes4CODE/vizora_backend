@@ -132,7 +132,7 @@ def dashboard(user, first_day):
         "daily_orders": daily_order_counts(first_day),
         "funnel": funnel(kpis),
         "agents_today": agents,
-        "maystro": {"mode": config.mode, "last_sync_at": config.last_sync_at, "last_sync_ok": config.last_sync_ok},
+        "maystro": {"connected": bool(config.encrypted_token), "last_sync_at": config.last_sync_at, "last_sync_ok": config.last_sync_ok},
     }
     if user.has_section("accounting"):
         summary = profit_summary(first_day)

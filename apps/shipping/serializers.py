@@ -205,27 +205,12 @@ class AccountSyncSerializer(serializers.Serializer):
     background = serializers.BooleanField(default=False)
 
 
-class BalanceStartSerializer(serializers.Serializer):
-    start_date = serializers.DateField(allow_null=True)
-
-
-class ManualPaymentSerializer(serializers.Serializer):
-    amount = serializers.IntegerField(min_value=1, max_value=10_000_000_000)
-    paid_on = serializers.DateField()
-    note = serializers.CharField(required=False, allow_blank=True, max_length=255, default="")
-
-
 class MaystroPaymentSerializer(serializers.ModelSerializer):
     source_label = serializers.CharField(source="get_source_display", read_only=True)
-    created_by_name = serializers.SerializerMethodField()
 
     class Meta:
         model = MaystroPayment
-        fields = ["id", "source", "source_label", "paid_on", "amount", "orders_count", "note", "created_by_name", "created_at"]
-
-    def get_created_by_name(self, obj):
-        user = obj.created_by
-        return (user.full_name or user.username) if user else ""
+        fields = ["id", "source", "source_label", "paid_on", "amount", "orders_count"]
 
 
 class MaystroOrderSerializer(serializers.ModelSerializer):
@@ -263,7 +248,7 @@ class MaystroConfigSerializer(serializers.ModelSerializer):
     class Meta:
         model = MaystroConfig
         fields = [
-            "mode", "store_id", "status_map", "return_fee", "token", "has_token", "webhook_path",
+            "store_id", "status_map", "return_fee", "token", "has_token", "webhook_path",
             "last_sync_at", "last_sync_ok", "last_sync_error", "mirror_synced_at",
             "mirror_full_sync_at", "mirror_sync_ok", "mirror_sync_error", "mirror_orders",
         ]

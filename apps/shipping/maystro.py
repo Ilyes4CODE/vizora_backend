@@ -13,6 +13,8 @@ from .models import MaystroConfig
 
 API_URL = "https://orders-management.maystro-delivery.com"
 STORE_ORDERS_URL = "https://backend.maystro-delivery.com/api/stores/orders/"
+STORE_BALANCE_URL = "https://backend.maystro-delivery.com/api/stores/payments/"
+MAX_PAYMENT_PAGES = 200
 REQUEST_TIMEOUT_SECONDS = 30
 MIN_REQUEST_INTERVAL = 0.21
 MAX_RETRY_WAIT = 60
@@ -89,17 +91,6 @@ def order_error_message(body):
         detail = item.get("detail", "") if isinstance(item, dict) else str(item)
         messages.append(f"{label} ({code})" if label else f"{detail} ({code})")
     return " · ".join(messages)
-
-
-class SimulatedMaystroClient:
-    def ping(self):
-        return True
-
-    def create_order(self, order):
-        return {"tracking_number": f"MD-{770000 + order.pk}", "external_id": str(order.pk)}
-
-    def fetch_status(self, shipment):
-        return None
 
 
 class LiveMaystroClient:
@@ -197,6 +188,18 @@ class LiveMaystroClient:
         data = self.request("GET", self.api("/api/stock/product-details/stock-details/"), params={"product_id": product_id})
         return data if isinstance(data, list) else []
 
+    def balance(self):
+        data = self.request("GET", STORE_BALANCE_URL)
+        if not isinstance(data, dict):
+            raise MaystroError("رد غير متوقع من Maystro", "maystro_bad_response")
+        return {"current": data.get("solde en cours"), "payable": data.get("solde a payer")}
+
+    def payments(self, page):
+        data = self.request("GET", self.api("/api/payments/"), params={"page": page})
+        if not isinstance(data, dict):
+            raise MaystroError("رد غير متوقع من Maystro", "maystro_bad_response")
+        return {"results": [row for row in data.get("results", []) if isinstance(row, dict)], "next": data.get("next"), "count": data.get("count", 0)}
+
     def store_orders(self, page, statuses=None):
         params = {"page": page}
         if statuses:
@@ -259,11 +262,13 @@ class LiveMaystroClient:
         return {"status": str(latest["status"]), "occurred_at": latest.get("created_at")}
 
 
-def get_client(config=None, attempts=NETWORK_ATTEMPTS):
+def is_connected(config=None):
     config = config or MaystroConfig.load()
-    if config.mode == MaystroConfig.Mode.LIVE:
-        return LiveMaystroClient(config, attempts)
-    return SimulatedMaystroClient()
+    return bool(config.encrypted_token)
+
+
+def get_client(config=None, attempts=NETWORK_ATTEMPTS):
+    return LiveMaystroClient(config or MaystroConfig.load(), attempts)
 
 
 def decode_text(value):
