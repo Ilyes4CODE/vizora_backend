@@ -11,10 +11,13 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
 from django.db import connections
 from django.test import override_settings
+from django.utils import timezone
 from PIL import Image
 
 from apps.accounts.models import User
+from apps.core.exceptions import ApiError
 from apps.core.models import Backup
+from apps.shipping.models import MaystroConfig
 
 from .base import ApiTestCase
 
@@ -70,6 +73,43 @@ class MaintenanceCommandTests(ApiTestCase):
         self.assertIn("backup", first.getvalue())
         self.assertEqual(second.getvalue().strip(), "nothing due")
         self.assertEqual(Backup.objects.filter(kind=Backup.Kind.AUTO).count(), 1)
+
+
+class CronFullSyncTests(ApiTestCase):
+    def setUp(self):
+        super().setUp()
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        backups = override_settings(BACKUP_DIR=folder.name)
+        backups.enable()
+        self.addCleanup(backups.disable)
+        config = MaystroConfig.load()
+        config.mode = MaystroConfig.Mode.LIVE
+        config.set_token("synthetic-token")
+        config.save()
+
+    def run_command(self):
+        output = StringIO()
+        with patch("apps.core.maintenance.sync_parcels"), patch("apps.core.management.commands.run_maintenance.refresh_stock", return_value=False):
+            call_command("run_maintenance", stdout=output)
+        return output.getvalue()
+
+    def test_cron_finishes_a_full_sync_that_never_completed(self):
+        with patch("apps.core.management.commands.run_maintenance.sync_account", return_value={"fetched": 3692}) as full:
+            text = self.run_command()
+        full.assert_called_once_with(full=True)
+        self.assertIn("maystro full sync (3692 orders)", text)
+
+    def test_cron_leaves_a_finished_full_sync_alone(self):
+        MaystroConfig.objects.filter(pk=MaystroConfig.load().pk).update(mirror_full_sync_at=timezone.now())
+        with patch("apps.core.management.commands.run_maintenance.sync_account") as full:
+            self.run_command()
+        full.assert_not_called()
+
+    def test_cron_reports_a_sync_already_running(self):
+        with patch("apps.core.management.commands.run_maintenance.sync_account", side_effect=ApiError("مزامنة Maystro جارية بالفعل", "sync_running", 409)):
+            text = self.run_command()
+        self.assertIn("maystro full sync not finished", text)
 
 
 @override_settings(DEBUG=False, CORS_ALLOWED_ORIGINS=["app://vizora"], ALLOWED_HOSTS=["backend.vizorawear.com"])

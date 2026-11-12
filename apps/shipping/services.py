@@ -231,6 +231,15 @@ def link_products(remote_products):
     return linked, unlinked
 
 
+def priced_options(client, commune_id):
+    try:
+        return client.delivery_options(commune_id)
+    except MaystroError as error:
+        if error.status_code in (400, 404) or (error.status_code or 0) >= 500:
+            return []
+        raise
+
+
 def sync_wilaya(wilaya, remote, client):
     wilaya.courier_ref = str(remote["display_id"])
     remote_communes = [item for item in client.communes(remote["display_id"]) if isinstance(item, dict)]
@@ -242,7 +251,7 @@ def sync_wilaya(wilaya, remote, client):
         )
     center = remote.get("center_commune") or (remote_communes[0]["id"] if remote_communes else None)
     if center:
-        options = client.delivery_options(center)
+        options = priced_options(client, center)
         prices = {option.get("type"): option.get("price") for option in options if isinstance(option, dict)}
         home = prices.get("home")
         desk = prices.get("stopdesk")

@@ -476,6 +476,34 @@ class ConfigAndLiveClientTests(ApiTestCase):
         self.assertEqual(Commune.objects.get(wilaya_id=16).courier_ref, "900")
         self.assertEqual(Product.objects.get(pk=self.product.pk).courier_ref, self.PRODUCT_UUID)
 
+    def test_catalog_sync_survives_a_wilaya_maystro_cannot_price(self):
+        self.enable_live()
+
+        def reply(method, url, **kwargs):
+            if url.endswith("/api/base/delivery-options/") and (kwargs.get("params") or {}).get("commune") == 2:
+                return self.fake_response(500, {"detail": "server error"})
+            return self.catalog_reply(method, url, **kwargs)
+
+        with patch("apps.shipping.maystro.requests.request", side_effect=reply):
+            response = self.client.post("/api/shipping/config/sync-catalog/")
+        self.assertCode(response, 200)
+        self.assertEqual(response.data["wilayas"], 2)
+        adrar = Wilaya.objects.get(pk=1)
+        self.assertEqual((adrar.courier_ref, adrar.home_available, adrar.desk_available), ("1", False, False))
+        self.assertEqual(Commune.objects.get(wilaya_id=1).courier_ref, "2")
+        self.assertEqual(Wilaya.objects.get(pk=16).home_fee, 700)
+
+    def test_catalog_sync_still_stops_on_a_refused_token(self):
+        self.enable_live()
+
+        def reply(method, url, **kwargs):
+            if url.endswith("/api/base/delivery-options/"):
+                return self.fake_response(401, {"detail": "Token non valide."})
+            return self.catalog_reply(method, url, **kwargs)
+
+        with patch("apps.shipping.maystro.requests.request", side_effect=reply):
+            self.assertCode(self.client.post("/api/shipping/config/sync-catalog/"), 502, "maystro_rejected")
+
     def test_catalog_sync_requires_live_mode(self):
         self.assertCode(self.client.post("/api/shipping/config/sync-catalog/"), 409, "maystro_simulated")
 
