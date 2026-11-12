@@ -1,5 +1,6 @@
 import base64
 import json
+import os
 from datetime import timedelta
 from unittest.mock import MagicMock, patch
 
@@ -514,7 +515,7 @@ class ConfigAndLiveClientTests(ApiTestCase):
 
     def test_sync_command(self):
         self.shipped_order()
-        with open("NUL", "w", encoding="utf-8") as sink:
+        with open(os.devnull, "w", encoding="utf-8") as sink:
             call_command("sync_maystro", stdout=sink)
         self.assertIsNotNone(MaystroConfig.load().last_sync_at)
 
