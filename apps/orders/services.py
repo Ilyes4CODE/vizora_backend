@@ -14,6 +14,7 @@ from apps.catalog.services import available_quantity
 from apps.core.exceptions import conflict
 
 from .models import ConfirmationOutcome, DeliveryType, Order, OrderEvent, OrderItem, OrderStatus, SuiviOutcome
+from .signals import order_confirmed
 
 PHONE_PATTERN = re.compile(r"^0[567]\d{8}$")
 EDITABLE_STATUSES = {OrderStatus.PENDING, OrderStatus.CONFIRMED}
@@ -231,6 +232,8 @@ def record_confirmation(order_id, outcome, user, note="", next_call_at=None):
     order.save()
     label = ConfirmationOutcome(outcome).label
     add_event(order, f"{label} · {user.full_name}", user=user, stage=OrderEvent.Stage.CONFIRM, outcome=outcome, note=note)
+    if order.status == OrderStatus.CONFIRMED:
+        order_confirmed.send(sender=Order, order=order)
     return order
 
 

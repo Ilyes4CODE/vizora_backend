@@ -13,6 +13,7 @@ from apps.core.exceptions import ApiError, conflict
 from apps.core.models import Commune, Wilaya
 from apps.orders.models import Order, OrderStatus
 from apps.orders.services import add_event
+from apps.orders.signals import order_delivered
 
 from .maystro import STATUS_LABELS, MaystroError, get_client
 from .models import MaystroConfig, MaystroOrder, Shipment, ShipmentEvent, Stage
@@ -132,6 +133,7 @@ def apply_status_update(shipment_id, raw_status, message="", occurred_at=None, s
         order.status = OrderStatus.DELIVERED
         order.delivered_at = moment
         order.save(update_fields=["status", "delivered_at"])
+        order_delivered.send(sender=Order, order=order)
     if resolved == Stage.RETURNED:
         order.status = OrderStatus.RETURNED
         order.returned_at = moment

@@ -8,6 +8,7 @@ from rest_framework.views import APIView
 from apps.core import audit
 from apps.orders.models import Order, OrderStatus, Source
 
+from . import conversions
 from .catalog import forget_stock
 from .models import ContactMessage, Review, StockAlert, StoreImage, StoreOffer, StorePage, StoreProduct, StoreSettings
 from .serializers import (
@@ -64,6 +65,40 @@ class StoreSettingsView(APIView):
         serializer.save()
         audit.record("store_settings_updated", "عدّل إعدادات الموقع", request=request)
         return Response(serializer.data)
+
+
+class ConversionsView(APIView):
+    section = "products"
+
+    def get(self, request):
+        return Response(conversions.report())
+
+
+class ConversionsTestView(APIView):
+    section = "products"
+
+    def post(self, request):
+        platform = request.data.get("platform")
+        if platform not in conversions.SERVER_PLATFORMS:
+            return Response({"detail": "اختر Facebook أو TikTok"}, status=400)
+        store = StoreSettings.load()
+        label = conversions.LABELS[platform]
+        if not conversions.server_ready(store, platform):
+            return Response({"detail": f"أضف معرّف البيكسل ورمز الخادم لـ {label} واحفظ أولاً"}, status=400)
+        if not conversions.test_code_for(store, platform):
+            return Response({"detail": f"أضف رمز الاختبار من {label} واحفظ أولاً"}, status=400)
+        ok, detail = conversions.send_test(platform, request)
+        audit.record("pixel_test_sent", f"أرسل حدثاً تجريبياً إلى {label}", request=request)
+        return Response({"ok": ok, "detail": detail})
+
+
+class ConversionsRetryView(APIView):
+    section = "products"
+
+    def post(self, request):
+        result = conversions.retry_failed()
+        audit.record("pixel_events_retried", f"أعاد إرسال {result['sent'] + result['failed']} حدثاً", request=request)
+        return Response(result)
 
 
 class StoreProductViewSet(viewsets.ModelViewSet):

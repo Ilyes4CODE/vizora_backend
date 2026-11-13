@@ -3,6 +3,9 @@ from rest_framework.routers import SimpleRouter
 
 from .api import (
     ContactMessageViewSet,
+    ConversionsRetryView,
+    ConversionsTestView,
+    ConversionsView,
     ReviewViewSet,
     StockAlertViewSet,
     StoreImageViewSet,
@@ -25,4 +28,7 @@ router.register("store/alerts", StockAlertViewSet, basename="store-alert")
 urlpatterns = [
     path("store/summary/", StoreSummaryView.as_view(), name="store-summary"),
     path("store/settings/", StoreSettingsView.as_view(), name="store-settings"),
+    path("store/conversions/", ConversionsView.as_view(), name="store-conversions"),
+    path("store/conversions/test/", ConversionsTestView.as_view(), name="store-conversions-test"),
+    path("store/conversions/retry/", ConversionsRetryView.as_view(), name="store-conversions-retry"),
 ] + router.urls

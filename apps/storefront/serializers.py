@@ -20,25 +20,91 @@ def public_base():
     return f"https://{host}"
 
 
+FACEBOOK_PIXEL = re.compile(r"^\d{10,20}$")
+TIKTOK_PIXEL = re.compile(r"^[A-Z0-9]{10,30}$")
+GOOGLE_ID = re.compile(r"^G-[A-Z0-9]{4,20}$")
+TEST_CODE = re.compile(r"^[A-Za-z0-9_-]{3,40}$")
+MIN_TOKEN = 20
+
+
 class StoreSettingsSerializer(serializers.ModelSerializer):
     store_url = serializers.SerializerMethodField()
+    facebook_token = serializers.CharField(write_only=True, required=False, allow_blank=True, max_length=600, trim_whitespace=True)
+    tiktok_token = serializers.CharField(write_only=True, required=False, allow_blank=True, max_length=600, trim_whitespace=True)
+    facebook_token_set = serializers.SerializerMethodField()
+    tiktok_token_set = serializers.SerializerMethodField()
 
     class Meta:
         model = StoreSettings
         fields = [
             "is_open", "whatsapp", "facebook_url", "instagram_url", "tiktok_url", "announcement_ar", "announcement_en",
-            "delivery_days_ar", "delivery_days_en", "facebook_pixel", "tiktok_pixel", "google_analytics", "orders_per_hour",
-            "updated_at", "store_url",
+            "delivery_days_ar", "delivery_days_en", "facebook_pixel", "tiktok_pixel", "google_analytics",
+            "facebook_token", "facebook_token_set", "facebook_test_code", "tiktok_token", "tiktok_token_set", "tiktok_test_code",
+            "purchase_moment", "orders_per_hour", "updated_at", "store_url",
         ]
         read_only_fields = ["updated_at", "store_url"]
 
     def get_store_url(self, obj):
         return public_base()
 
+    def get_facebook_token_set(self, obj):
+        return bool(obj.encrypted_facebook_token)
+
+    def get_tiktok_token_set(self, obj):
+        return bool(obj.encrypted_tiktok_token)
+
     def validate_orders_per_hour(self, value):
         if value < 1 or value > 100:
             raise serializers.ValidationError("اختر رقماً بين 1 و 100")
         return value
+
+    def validate_facebook_pixel(self, value):
+        value = "".join(value.split())
+        if value and not FACEBOOK_PIXEL.fullmatch(value):
+            raise serializers.ValidationError("معرّف بيكسل فيسبوك أرقام فقط، عادة 15 أو 16 رقماً")
+        return value
+
+    def validate_tiktok_pixel(self, value):
+        value = "".join(value.split()).upper()
+        if value and not TIKTOK_PIXEL.fullmatch(value):
+            raise serializers.ValidationError("معرّف بيكسل تيك توك حروف لاتينية وأرقام، مثل CABC123XYZ456")
+        return value
+
+    def validate_google_analytics(self, value):
+        value = "".join(value.split()).upper()
+        if value and not GOOGLE_ID.fullmatch(value):
+            raise serializers.ValidationError("معرّف Google Analytics يبدأ بـ G- مثل G-ABC123XYZ")
+        return value
+
+    def validate_token(self, value):
+        value = "".join(value.split())
+        if value and len(value) < MIN_TOKEN:
+            raise serializers.ValidationError("الرمز قصير، انسخه كاملاً")
+        return value
+
+    def validate_facebook_token(self, value):
+        return self.validate_token(value)
+
+    def validate_tiktok_token(self, value):
+        return self.validate_token(value)
+
+    def validate_test_code(self, value):
+        value = value.strip()
+        if value and not TEST_CODE.fullmatch(value):
+            raise serializers.ValidationError("رمز الاختبار حروف لاتينية وأرقام فقط، مثل TEST12345")
+        return value
+
+    def validate_facebook_test_code(self, value):
+        return self.validate_test_code(value)
+
+    def validate_tiktok_test_code(self, value):
+        return self.validate_test_code(value)
+
+    def update(self, instance, validated_data):
+        for key in ("facebook_token", "tiktok_token"):
+            if key in validated_data:
+                setattr(instance, key, validated_data.pop(key))
+        return super().update(instance, validated_data)
 
 
 class StoreOfferSerializer(serializers.ModelSerializer):

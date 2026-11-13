@@ -11,6 +11,7 @@ from apps.orders.models import Order, OrderStatus
 from apps.shipping.models import Stage
 
 from . import catalog
+from .conversions import browser_events, content_id
 from .models import ContactMessage, Review, StockAlert, StorePage, StoreSettings
 from .ordering import StoreError, bot_check, clean_customer, clean_phone, clean_text, client_ip, form_stamp, place_order
 from .templatetags.store import illustration, illustration_path
@@ -72,6 +73,7 @@ def shop_config(lang):
             "facebook_pixel": settings.facebook_pixel,
             "tiktok_pixel": settings.tiktok_pixel,
             "google_analytics": settings.google_analytics,
+            "events": browser_events(settings),
         },
         "business": {
             "name": profile.name,
@@ -152,7 +154,7 @@ def order_lines(order, lang):
         store_product = getattr(line.product, "store", None)
         if store_product is not None:
             title = pick(store_product, "title", lang)
-        rows.append({"title": title, "quantity": line.quantity, "total": line.unit_price * line.quantity})
+        rows.append({"id": content_id(line.product), "title": title, "quantity": line.quantity, "price": line.unit_price, "total": line.unit_price * line.quantity})
     return rows
 
 

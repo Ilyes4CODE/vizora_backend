@@ -35,6 +35,10 @@ ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS") or ["localhost", "127.0.0.1"]
 STORE_HOSTS = env_list("STORE_HOSTS") or ["vizorawear.com", "www.vizorawear.com"]
 ALLOWED_HOSTS += [host for host in STORE_HOSTS if host not in ALLOWED_HOSTS]
 
+CONVERSIONS_META_URL = os.environ.get("CONVERSIONS_META_URL", "https://graph.facebook.com/v23.0")
+CONVERSIONS_TIKTOK_URL = os.environ.get("CONVERSIONS_TIKTOK_URL", "https://business-api.tiktok.com/open_api/v1.3/event/track/")
+CONVERSIONS_SYNC = env_bool("CONVERSIONS_SYNC")
+
 INSTALLED_APPS = [
     "django.contrib.auth",
     "django.contrib.contenttypes",

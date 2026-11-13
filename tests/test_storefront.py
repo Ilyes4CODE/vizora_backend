@@ -186,7 +186,7 @@ class ShopApiTests(StoreTestCase):
         self.assertEqual(order.subtotal, 11900)
         self.assertEqual(order.delivery_fee, Wilaya.objects.get(pk=16).home_fee)
         self.assertEqual(response.data["total"], 11900 + order.delivery_fee)
-        self.assertEqual(response.data["lines"], [{"title": "بطاقة فيزا", "quantity": 1, "total": 11900}])
+        self.assertEqual(response.data["lines"], [{"id": "visa-card", "title": "بطاقة فيزا", "quantity": 1, "price": 11900, "total": 11900}])
         self.assertIn("العرض الثاني", order.note)
         origin = OrderOrigin.objects.get(order=order)
         self.assertEqual((origin.lang, origin.user_agent), ("ar", "Phone"))
@@ -297,7 +297,8 @@ class ShopApiTests(StoreTestCase):
         self.assertEqual(order.subtotal, 23800)
 
     def test_illustrations_are_listed_once_added(self):
-        self.assertEqual(self.client.get("/api/shop/config/").data["illustrations"], {})
+        with patch("apps.storefront.public.illustration_path", return_value=""):
+            self.assertEqual(self.client.get("/api/shop/config/").data["illustrations"], {})
         with patch("apps.storefront.public.illustration_path", side_effect=lambda name: "x" if name == "hero-1" else ""), patch(
             "apps.storefront.public.illustration", return_value="/static/storefront/illustrations/hero-1.webp?v=1"
         ):
@@ -317,9 +318,9 @@ class StoreAdminApiTests(StoreTestCase):
         self.assertEqual((summary.data["orders_today"], summary.data["orders_pending"]), (1, 1))
         self.assertEqual(summary.data["store_url"], "https://vizorawear.com")
         self.assertCode(self.client.get("/api/store/settings/"), 200)
-        self.assertCode(self.client.patch("/api/store/settings/", {"facebook_pixel": "123456", "announcement_ar": "توصيل مجاني"}), 200)
+        self.assertCode(self.client.patch("/api/store/settings/", {"facebook_pixel": "123456789012345", "announcement_ar": "توصيل مجاني"}), 200)
         config = embedded_config(self.store.get("/").content.decode())
-        self.assertEqual((config["store"]["facebook_pixel"], config["store"]["announcement"]), ("123456", "توصيل مجاني"))
+        self.assertEqual((config["store"]["facebook_pixel"], config["store"]["announcement"]), ("123456789012345", "توصيل مجاني"))
         self.assertCode(self.client.patch("/api/store/settings/", {"orders_per_hour": 0}), 400)
 
     def test_products_offers_and_images(self):

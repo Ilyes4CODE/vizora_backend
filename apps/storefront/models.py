@@ -1,7 +1,14 @@
 from django.db import models
 from django.utils import timezone
 
+from apps.core.crypto import decrypt_text, encrypt_text
 from apps.core.models import SingletonModel
+
+
+class PurchaseMoment(models.TextChoices):
+    PLACED = "placed", "عند تسجيل الطلبية"
+    CONFIRMED = "confirmed", "عند تأكيد الطلبية"
+    DELIVERED = "delivered", "عند تسليم الطرد"
 
 
 class StoreSettings(SingletonModel):
@@ -17,8 +24,39 @@ class StoreSettings(SingletonModel):
     facebook_pixel = models.CharField(max_length=40, blank=True)
     tiktok_pixel = models.CharField(max_length=40, blank=True)
     google_analytics = models.CharField(max_length=40, blank=True)
+    encrypted_facebook_token = models.TextField(blank=True)
+    facebook_server_since = models.DateTimeField(null=True, blank=True)
+    facebook_test_code = models.CharField(max_length=40, blank=True)
+    encrypted_tiktok_token = models.TextField(blank=True)
+    tiktok_server_since = models.DateTimeField(null=True, blank=True)
+    tiktok_test_code = models.CharField(max_length=40, blank=True)
+    purchase_moment = models.CharField(max_length=10, choices=PurchaseMoment.choices, default=PurchaseMoment.PLACED)
     orders_per_hour = models.PositiveSmallIntegerField(default=5)
     updated_at = models.DateTimeField(auto_now=True)
+
+    @property
+    def facebook_token(self):
+        return decrypt_text(self.encrypted_facebook_token) if self.encrypted_facebook_token else ""
+
+    @facebook_token.setter
+    def facebook_token(self, value):
+        if value and not self.encrypted_facebook_token:
+            self.facebook_server_since = timezone.now()
+        if not value:
+            self.facebook_server_since = None
+        self.encrypted_facebook_token = encrypt_text(value) if value else ""
+
+    @property
+    def tiktok_token(self):
+        return decrypt_text(self.encrypted_tiktok_token) if self.encrypted_tiktok_token else ""
+
+    @tiktok_token.setter
+    def tiktok_token(self, value):
+        if value and not self.encrypted_tiktok_token:
+            self.tiktok_server_since = timezone.now()
+        if not value:
+            self.tiktok_server_since = None
+        self.encrypted_tiktok_token = encrypt_text(value) if value else ""
 
 
 class StoreProduct(models.Model):
@@ -139,4 +177,32 @@ class OrderOrigin(models.Model):
     utm_medium = models.CharField(max_length=100, blank=True)
     utm_campaign = models.CharField(max_length=100, blank=True)
     referrer = models.CharField(max_length=255, blank=True)
+    page_url = models.CharField(max_length=500, blank=True)
+    fbp = models.CharField(max_length=120, blank=True)
+    fbc = models.CharField(max_length=500, blank=True)
+    ttp = models.CharField(max_length=120, blank=True)
+    ttclid = models.CharField(max_length=500, blank=True)
     created_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+
+class PixelEvent(models.Model):
+    class Platform(models.TextChoices):
+        FACEBOOK = "facebook", "Facebook"
+        TIKTOK = "tiktok", "TikTok"
+
+    class Status(models.TextChoices):
+        SENT = "sent", "وصل"
+        FAILED = "failed", "فشل"
+
+    order = models.ForeignKey("orders.Order", null=True, blank=True, on_delete=models.CASCADE, related_name="pixel_events")
+    platform = models.CharField(max_length=10, choices=Platform.choices)
+    event_name = models.CharField(max_length=40)
+    event_id = models.CharField(max_length=60)
+    value = models.PositiveIntegerField(default=0)
+    status = models.CharField(max_length=10, choices=Status.choices)
+    is_test = models.BooleanField(default=False)
+    detail = models.CharField(max_length=300, blank=True)
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
