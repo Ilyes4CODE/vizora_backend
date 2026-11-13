@@ -1,0 +1,13 @@
+{% extends "storefront/base.html" %}{% load store %}
+{% block content %}
+{% illustration 'not-found' as art %}
+<div class="page-wrap">
+<div class="container">
+<section class="panel center" style="max-width:640px;margin:0 auto">
+{% if art %}<img class="art" src="{{ art }}" alt="" width="200" height="200">{% endif %}
+{% if expired %}<h1>{{ t.err_expired }}</h1><a class="btn btn-primary" href="{{ back }}">{{ t.back_to_store }}</a>
+{% else %}<h1>{{ t.not_found_title }}</h1><p class="lead">{{ t.not_found_text }}</p><a class="btn btn-primary" href="{% surl 'home' %}">{{ t.back_to_store }}</a>{% endif %}
+</section>
+</div>
+</div>
+{% endblock %}

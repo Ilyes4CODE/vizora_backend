@@ -65,7 +65,7 @@ class OrderListSerializer(serializers.ModelSerializer):
         fields = [
             "id", "reference", "customer_name", "phone", "wilaya", "wilaya_name", "commune", "products",
             "subtotal", "delivery_fee", "total", "status", "status_label", "assigned_to", "assigned_name",
-            "call_attempts", "created_at",
+            "call_attempts", "source", "created_at",
         ]
 
     def get_products(self, obj):
@@ -81,7 +81,7 @@ class OrderDetailSerializer(OrderListSerializer):
 
     class Meta(OrderListSerializer.Meta):
         fields = OrderListSerializer.Meta.fields + [
-            "address", "delivery_type", "delivery_type_label", "source", "campaign", "campaign_name", "note",
+            "address", "delivery_type", "delivery_type_label", "campaign", "campaign_name", "note",
             "next_call_at", "cancel_reason", "suivi_attempts", "suivi_next_at", "confirmed_at", "shipped_at",
             "delivered_at", "returned_at", "cancelled_at", "items", "events", "shipment",
         ]

@@ -65,6 +65,19 @@ def merge_items(items):
     return [(products[key], quantity) for key, quantity in merged.items()]
 
 
+def priced_items(items):
+    merged = {}
+    for item in items:
+        product = item["product"]
+        price = item.get("unit_price", product.price)
+        key = (product.pk, price)
+        if key in merged:
+            merged[key][1] += item["quantity"]
+        else:
+            merged[key] = [product, item["quantity"], price]
+    return [tuple(row) for row in merged.values()]
+
+
 def choose_agent(exclude=None):
     roles = RolePermission.objects.filter(section=Section.CONFIRMATION, allowed=True).values_list("role", flat=True)
     agents = User.objects.filter(is_active=True, role__in=roles)
@@ -93,11 +106,11 @@ def add_event(order, message, user=None, stage=OrderEvent.Stage.SYSTEM, outcome=
 
 @transaction.atomic
 def create_order(data, user, source="manual", event_message="أضيفت الطلبية"):
-    items = merge_items(data["items"])
+    items = priced_items(data["items"])
     wilaya = data["wilaya"]
     delivery_type = data.get("delivery_type", DeliveryType.HOME)
     fee = delivery_fee_for(wilaya, delivery_type)
-    subtotal = sum(product.price * quantity for product, quantity in items)
+    subtotal = sum(price * quantity for product, quantity, price in items)
     order = Order.objects.create(
         customer_name=data["customer_name"],
         phone=data["phone"],
@@ -119,8 +132,8 @@ def create_order(data, user, source="manual", event_message="أضيفت الطل
     order.save(update_fields=["reference"])
     OrderItem.objects.bulk_create(
         [
-            OrderItem(order=order, product=product, quantity=quantity, unit_price=product.price, unit_cost=product.cost)
-            for product, quantity in items
+            OrderItem(order=order, product=product, quantity=quantity, unit_price=price, unit_cost=product.cost)
+            for product, quantity, price in items
         ]
     )
     add_event(order, event_message, user=user)
@@ -155,10 +168,11 @@ def update_order(order_id, data, user):
             current = order_quantities(order)
             extra = {product.pk: quantity - current.get(product.pk, 0) for product, quantity in items}
             ensure_available({key: value for key, value in extra.items() if value > 0})
+        kept_prices = {item.product_id: item.unit_price for item in order.items.all()}
         order.items.all().delete()
         OrderItem.objects.bulk_create(
             [
-                OrderItem(order=order, product=product, quantity=quantity, unit_price=product.price, unit_cost=product.cost)
+                OrderItem(order=order, product=product, quantity=quantity, unit_price=kept_prices.get(product.pk, product.price), unit_cost=product.cost)
                 for product, quantity in items
             ]
         )

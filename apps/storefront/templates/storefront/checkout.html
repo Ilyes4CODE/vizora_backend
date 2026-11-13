@@ -1,0 +1,27 @@
+{% extends "storefront/base.html" %}{% load store %}
+{% block content %}
+<div class="page-wrap">
+<div class="container">
+<h1 style="font-size:clamp(26px,3vw,34px);font-weight:800;margin-bottom:20px">{{ t.checkout_title }}</h1>
+<div class="checkout-layout">
+<form id="order-form" class="order-box" method="post" action="{% surl 'checkout' %}" data-order-form data-currency="{{ t.currency }}" data-pick-wilaya="{{ t.pick_wilaya_fee }}" data-subtotal="{{ subtotal }}" novalidate aria-label="{{ t.order_form }}">
+{% csrf_token %}
+<h2>{{ t.delivery_info }}</h2>
+{% if errors.form %}<p class="alert alert-error" role="alert">{{ errors.form }}</p>{% endif %}
+{% include "storefront/partials/customer_fields.html" %}
+<button class="btn btn-primary btn-lg btn-block" type="submit" data-submit>{{ t.confirm_order }}</button>
+<p class="small-note">{{ t.we_will_call }}</p>
+</form>
+<aside class="panel" aria-label="{{ t.your_order }}">
+<h2 style="font-size:22px">{{ t.your_order }}</h2>
+<dl class="lines">
+{% for row in rows %}<div><dt>{{ row.item.title }}{% if row.offer_title %} · {{ row.offer_title }}{% endif %} × {{ row.quantity }}</dt><dd>{{ row.line_total|money:lang }}</dd></div>{% endfor %}
+<div><dt>{{ t.summary_delivery }}</dt><dd data-sum-delivery>{{ t.pick_wilaya_fee }}</dd></div>
+<div class="total"><dt>{{ t.summary_total }}</dt><dd data-sum-total style="font-family:var(--head);font-size:22px;font-weight:800">{{ subtotal|money:lang }}</dd></div>
+</dl>
+<a href="{% surl 'cart' %}">{{ t.cart_title }}</a>
+</aside>
+</div>
+</div>
+</div>
+{% endblock %}

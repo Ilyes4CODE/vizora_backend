@@ -1,0 +1,101 @@
+{% extends "storefront/base.html" %}{% load store %}
+{% block body_class %}product-page{% endblock %}
+{% block head %}{% if store.facebook_pixel %}<script>fbq('track','ViewContent',{content_name:'{{ item.title|escapejs }}',value:{{ item.price }},currency:'DZD'});</script>{% endif %}{% endblock %}
+{% block content %}
+<div class="container">
+<nav class="crumbs" aria-label="{{ t.breadcrumb }}"><a href="{% surl 'home' %}">{{ t.nav_home }}</a><span aria-hidden="true">/</span><a href="{% surl 'products' %}">{{ t.nav_products }}</a><span aria-hidden="true">/</span><span aria-current="page">{{ item.title }}</span></nav>
+<div class="product-layout">
+<div class="gallery">
+<div class="gallery-main">{% if item.images %}<img data-gallery-main src="{{ item.images.0.url }}" alt="{{ item.images.0.alt }}" width="{{ item.images.0.width }}" height="{{ item.images.0.height }}" fetchpriority="high">{% else %}<span class="placeholder" style="color:var(--soft)"><svg aria-hidden="true" width="96" height="96" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg></span>{% endif %}</div>
+{% if item.images|length > 1 %}<div class="thumbs">{% for image in item.images %}<button class="thumb" type="button" data-thumb="{{ image.url }}" data-alt="{{ image.alt }}" aria-current="{% if forloop.first %}true{% else %}false{% endif %}" aria-label="{{ image.alt }} {{ forloop.counter }}"><img src="{{ image.url }}" alt="" loading="lazy" width="120" height="120"></button>{% endfor %}</div>{% endif %}
+</div>
+
+<div class="buy">
+<div class="stock-line">
+{% if item.state == 'out' %}<span class="badge badge-out">{{ t.sold_out }}</span>{% elif item.state == 'low' %}<span class="badge badge-low">{{ t.low_stock }}</span>{% elif item.from_maystro %}<span class="badge">{{ t.in_stock_maystro }}</span>{% else %}<span class="badge">{{ t.in_stock }}</span>{% endif %}
+{% if item.badge %}<span class="badge badge-dark">{{ item.badge }}</span>{% endif %}
+<span>{{ t.trust_cod }}</span>
+</div>
+<h1>{{ item.title }}</h1>
+{% if item.summary %}<p class="lead">{{ item.summary }}</p>{% endif %}
+<div class="price-row"><strong class="price" data-live-price>{{ item.price|money:lang }}</strong>{% if item.compare_price and item.compare_price > item.price %}<span class="was">{{ item.compare_price|money:lang }}</span>{% endif %}</div>
+{% if notified %}<p class="alert alert-ok" role="status">{{ t.notify_done }}</p>{% endif %}
+
+{% if item.orderable and store.is_open %}
+<form id="order-form" class="order-box" method="post" action="{% surl 'product' item.slug %}" data-order-form data-currency="{{ t.currency }}" data-pick-wilaya="{{ t.pick_wilaya_fee }}" data-base-price="{{ item.price }}" novalidate aria-label="{{ t.order_form }}">
+{% csrf_token %}
+<input type="hidden" name="product" value="{{ item.id }}">
+{% if item.offers %}
+<fieldset class="offers">
+<legend>{{ t.choose_offer }}</legend>
+{% for offer in item.offers %}
+<label class="offer"><input type="radio" name="offer" value="{{ offer.id }}" data-price="{{ offer.price }}"{% if values.offer|stringformat:"s" == offer.id|stringformat:"s" %} checked{% endif %}><span class="offer-body"><span class="offer-title">{{ offer.title }}</span><span class="offer-price">{{ offer.price|money:lang }}{% if offer.compare_price and offer.compare_price > offer.price %} <span class="was">{{ offer.compare_price|money:lang }}</span>{% endif %}</span>{% if offer.details %}<span class="offer-details">{{ offer.details }}</span>{% endif %}</span></label>
+{% endfor %}
+{% if errors.offer %}<span class="field-error">{{ errors.offer }}</span>{% endif %}
+</fieldset>
+{% endif %}
+<h2>{{ t.order_form_title }}</h2>
+{% if errors.form %}<p class="alert alert-error" role="alert">{{ errors.form }}</p>{% endif %}
+{% include "storefront/partials/customer_fields.html" %}
+<div class="qty-row">
+<label for="quantity">{{ t.quantity }}</label>
+<div class="qty">
+<button type="button" data-step="-1" aria-label="{{ t.decrease }}">−</button>
+<input id="quantity" type="number" name="quantity" min="1" max="{{ item.max_quantity }}" value="{{ values.quantity|default:1 }}" inputmode="numeric">
+<button type="button" data-step="1" aria-label="{{ t.increase }}">+</button>
+</div>
+{% if errors.quantity %}<span class="field-error">{{ errors.quantity }}</span>{% endif %}
+</div>
+<dl class="summary">
+<div><dt>{{ t.summary_product }}</dt><dd data-sum-product>{{ item.price|money:lang }}</dd></div>
+<div><dt>{{ t.summary_delivery }}</dt><dd data-sum-delivery>{{ t.pick_wilaya_fee }}</dd></div>
+<div class="total"><dt>{{ t.summary_total }}</dt><dd data-sum-total>{{ item.price|money:lang }}</dd></div>
+</dl>
+<div class="split-actions">
+<button class="btn btn-primary btn-lg" type="submit" data-submit>{{ t.confirm_order }}</button>
+<button class="btn btn-line btn-lg" type="submit" formaction="{% surl 'cart_add' %}" formnovalidate>{{ t.add_to_cart }}</button>
+</div>
+<p class="small-note">{{ t.we_will_call }}</p>
+</form>
+{% elif not store.is_open %}
+<p class="alert alert-error">{{ t.store_closed }}</p>
+{% else %}
+<form class="soldout-box" method="post" action="{% surl 'notify' item.slug %}">
+{% csrf_token %}
+<input type="hidden" name="stamp" value="{{ stamp }}">
+<div class="trap" aria-hidden="true"><label>Website<input type="text" name="website" tabindex="-1" autocomplete="off"></label></div>
+<h2>{{ t.sold_out_title }}</h2>
+<p>{{ t.sold_out_text }}</p>
+<label class="field">{{ t.your_phone }}<input class="tel" type="tel" name="phone" inputmode="tel" required maxlength="20" placeholder="{{ t.phone_placeholder }}"></label>
+<button class="btn btn-dark btn-lg" type="submit">{{ t.notify_me }}</button>
+</form>
+{% endif %}
+
+{% illustration 'feature-cod' as f1 %}{% illustration 'feature-delivery' as f2 %}{% illustration 'feature-guarantee' as f3 %}
+<ul class="trust">
+<li>{% if f1 %}<img src="{{ f1 }}" alt="" loading="lazy" width="40" height="40">{% endif %}{{ t.trust_cod }}</li>
+<li>{% if f2 %}<img src="{{ f2 }}" alt="" loading="lazy" width="40" height="40">{% endif %}{{ t.trust_wilayas }}</li>
+<li>{% if f3 %}<img src="{{ f3 }}" alt="" loading="lazy" width="40" height="40">{% endif %}{{ t.trust_support }}</li>
+</ul>
+</div>
+</div>
+
+<div class="info-row">
+{% if item.description %}<section class="info wide" aria-labelledby="desc-title"><h2 id="desc-title">{{ t.description }}</h2><div class="body">{{ item.description }}</div></section>{% endif %}
+<section class="info" aria-labelledby="pay-title"><h2 id="pay-title">{{ t.delivery_payment }}</h2><p class="body">{% if lang == 'ar' and store.delivery_days_ar %}{{ store.delivery_days_ar }} {% elif lang == 'en' and store.delivery_days_en %}{{ store.delivery_days_en }} {% endif %}{{ t.delivery_payment_text }}</p>{% for entry in footer_pages %}{% if entry.slug == 'returns' %}<a href="{% surl 'page' 'returns' %}">{{ entry.title }}</a>{% endif %}{% endfor %}{% if whatsapp_link %}<a href="{{ whatsapp_link }}" rel="noopener" target="_blank">{{ t.question_whatsapp }}</a>{% endif %}</section>
+</div>
+
+{% if related %}
+<section class="section" style="padding-top:0" aria-labelledby="related-title">
+<h2 id="related-title" style="font-size:26px;margin-bottom:24px">{{ t.related }}</h2>
+<div class="grid grid-products">{% for card in related %}{% include "storefront/partials/product_card.html" %}{% endfor %}</div>
+</section>
+{% endif %}
+</div>
+{% if item.orderable and store.is_open %}
+<div class="mobile-bar">
+<div class="sum"><span>{{ t.summary_total }}</span><strong data-sum-total>{{ item.price|money:lang }}</strong></div>
+<button class="btn btn-primary btn-lg" type="submit" form="order-form" data-submit>{{ t.confirm_short }}</button>
+</div>
+{% endif %}
+{% endblock %}

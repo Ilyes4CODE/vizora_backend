@@ -17,3 +17,6 @@ tmp/
 *.log
 *.enc
 keys.json
+apps/storefront/static/storefront/illustrations/*.png
+apps/storefront/static/storefront/illustrations/*.jpg
+apps/storefront/static/storefront/illustrations/*.jpeg

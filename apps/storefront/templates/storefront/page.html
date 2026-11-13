@@ -1,0 +1,12 @@
+{% extends "storefront/base.html" %}{% load store %}
+{% block content %}
+<div class="page-wrap">
+<div class="container">
+<article class="article">
+<h1>{{ entry.title }}</h1>
+<p class="updated"><span class="ltr">{{ entry.updated_at|date:"Y-m-d" }}</span></p>
+<div class="body">{{ entry.body }}</div>
+</article>
+</div>
+</div>
+{% endblock %}

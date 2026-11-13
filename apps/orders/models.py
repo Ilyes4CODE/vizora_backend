@@ -20,6 +20,7 @@ class DeliveryType(models.TextChoices):
 class Source(models.TextChoices):
     MANUAL = "manual", "يدوية"
     EXCEL = "excel", "استيراد Excel"
+    WEBSITE = "website", "الموقع"
 
 
 class ConfirmationOutcome(models.TextChoices):

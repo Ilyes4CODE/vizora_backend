@@ -32,10 +32,13 @@ SECRET_KEY = env_required("DJANGO_SECRET_KEY")
 FIELD_ENCRYPTION_KEY = env_required("FIELD_ENCRYPTION_KEY")
 DEBUG = env_bool("DJANGO_DEBUG")
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS") or ["localhost", "127.0.0.1"]
+STORE_HOSTS = env_list("STORE_HOSTS") or ["vizorawear.com", "www.vizorawear.com"]
+ALLOWED_HOSTS += [host for host in STORE_HOSTS if host not in ALLOWED_HOSTS]
 
 INSTALLED_APPS = [
     "django.contrib.auth",
     "django.contrib.contenttypes",
+    "django.contrib.sessions",
     "django.contrib.staticfiles",
     "corsheaders",
     "rest_framework",
@@ -49,10 +52,14 @@ INSTALLED_APPS = [
     "apps.orders",
     "apps.shipping",
     "apps.reports",
+    "apps.storefront",
 ]
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
+    "apps.storefront.middleware.StoreHostMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
@@ -111,6 +118,16 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+WHITENOISE_USE_FINDERS = True
+WHITENOISE_AUTOREFRESH = DEBUG
+WHITENOISE_MAX_AGE = 60 * 60 * 24 * 30
+SESSION_ENGINE = "django.contrib.sessions.backends.signed_cookies"
+SESSION_COOKIE_NAME = "vz_session"
+SESSION_COOKIE_AGE = 60 * 60 * 24 * 30
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = "Lax"
+CSRF_COOKIE_NAME = "vz_csrf"
+CSRF_FAILURE_VIEW = "apps.storefront.views.csrf_failure"
 MEDIA_URL = "media/"
 MEDIA_ROOT = Path(os.environ.get("MEDIA_DIR") or BASE_DIR / "media")
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
@@ -166,5 +183,7 @@ SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = "DENY"
 if not DEBUG:
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    SESSION_COOKIE_SECURE = env_bool("SECURE_COOKIES", True)
+    CSRF_COOKIE_SECURE = env_bool("SECURE_COOKIES", True)
 
 TEST_RUNNER = "tests.runner.ApiCoverageRunner"
