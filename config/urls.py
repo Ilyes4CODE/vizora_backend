@@ -17,6 +17,7 @@ urlpatterns = [
     path("api/", include("apps.shipping.urls")),
     path("api/", include("apps.reports.urls")),
     path("api/", include("apps.storefront.api_urls")),
+    path("api/", include("apps.storefront.public_urls")),
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
     path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="docs"),
     re_path(r"^media/(?P<path>products/[\w\-][\w.\-]*)$", product_image),

@@ -1,9 +1,0 @@
-{% extends "storefront/base.html" %}{% load store %}
-{% block content %}
-<section class="section">
-<div class="container">
-<div class="section-row"><div><h1 style="font-size:clamp(28px,3vw,40px);font-weight:800">{{ t.products_title }}</h1><p>{{ t.products_text }}</p></div></div>
-{% if cards %}<div class="grid grid-products">{% for card in cards %}{% include "storefront/partials/product_card.html" %}{% endfor %}</div>{% else %}<div class="empty"><p>{{ t.no_products }}</p></div>{% endif %}
-</div>
-</section>
-{% endblock %}

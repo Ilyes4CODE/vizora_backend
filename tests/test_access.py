@@ -3,7 +3,7 @@ from apps.accounts.permissions import sections_for
 from .base import ApiTestCase
 from .routes import endpoints, route_path
 
-PUBLIC_PATHS = ("/api/health/", "/api/auth/setup/", "/api/auth/login/", "/api/auth/refresh/", "/api/schema/", "/api/docs/", "/api/shipping/webhook/")
+PUBLIC_PATHS = ("/api/health/", "/api/auth/setup/", "/api/auth/login/", "/api/auth/refresh/", "/api/schema/", "/api/docs/", "/api/shipping/webhook/", "/api/shop/")
 
 
 class AccessSweepTests(ApiTestCase):

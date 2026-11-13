@@ -100,13 +100,11 @@ def clean_customer(post, t):
     return clean, values, errors
 
 
-def first_touch(request):
-    session = request.session
-    if "visit" in session:
-        return
-    data = {key: clean_text(request.GET.get(key), 100) for key in TRACKED_UTM}
-    data["referrer"] = clean_text(request.META.get("HTTP_REFERER"), 255)
-    session["visit"] = data
+def clean_visit(raw):
+    raw = raw if isinstance(raw, dict) else {}
+    data = {key: clean_text(raw.get(key), 100) for key in TRACKED_UTM}
+    data["referrer"] = clean_text(raw.get("referrer"), 255)
+    return data
 
 
 def campaign_for(name):
@@ -140,7 +138,7 @@ def offer_note(lines):
     return "طلبية من الموقع: " + "، ".join(parts)
 
 
-def place_order(lines, customer, request, lang):
+def place_order(lines, customer, request, lang, visit=None):
     settings = StoreSettings.load()
     if not settings.is_open:
         raise StoreError("store_closed")
@@ -160,7 +158,7 @@ def place_order(lines, customer, request, lang):
         product = line["store_product"].product
         if needed[product.pk] > available_units(product, fresh=True):
             raise StoreError("err_stock")
-    visit = request.session.get("visit") or {}
+    visit = clean_visit(visit)
     note = offer_note(lines)
     if customer.get("note"):
         note = f"{note}\nملاحظة الزبون: {customer['note']}"

@@ -4,7 +4,6 @@ from functools import lru_cache
 from django import template
 from django.contrib.staticfiles import finders
 from django.templatetags.static import static
-from django.urls import reverse
 
 register = template.Library()
 
@@ -36,37 +35,6 @@ def illustration_path(name):
     return ""
 
 
-@register.simple_tag
 def illustration(name):
     path = illustration_path(name)
     return asset(path) if path else ""
-
-
-@register.simple_tag(takes_context=True)
-def surl(context, name, *args):
-    return reverse(f"{context['lang']}:{name}", args=args)
-
-
-@register.filter
-def money(value, lang="ar"):
-    try:
-        amount = int(value)
-    except (TypeError, ValueError):
-        return ""
-    unit = "دج" if lang == "ar" else "DA"
-    return f"{amount:,} {unit}"
-
-
-@register.filter
-def get(mapping, key):
-    if isinstance(mapping, dict):
-        return mapping.get(key, "")
-    return ""
-
-
-@register.filter
-def times(value):
-    try:
-        return range(int(value))
-    except (TypeError, ValueError):
-        return range(0)
