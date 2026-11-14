@@ -10,13 +10,18 @@ from .services import normalize_phone, phone_problem
 from .importing import FIELD_ALIASES, REQUIRED_FIELDS
 
 
+def item_label(item):
+    return f"{item.product.name} ({item.variant})" if item.variant else item.product.name
+
+
 def product_summary(order):
-    return "، ".join(f"{item.product.name} × {item.quantity}" for item in order.items.all())
+    return "، ".join(f"{item_label(item)} × {item.quantity}" for item in order.items.all())
 
 
 class OrderItemInputSerializer(serializers.Serializer):
     product = serializers.PrimaryKeyRelatedField(queryset=Product.objects.filter(is_active=True))
     quantity = serializers.IntegerField(min_value=1, max_value=1000)
+    variant = serializers.CharField(max_length=150, required=False, allow_blank=True)
 
 
 class OrderWriteSerializer(serializers.Serializer):
@@ -43,7 +48,7 @@ class OrderItemSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = OrderItem
-        fields = ["id", "product", "product_name", "quantity", "unit_price"]
+        fields = ["id", "product", "product_name", "variant", "quantity", "unit_price"]
 
 
 class OrderEventSerializer(serializers.ModelSerializer):

@@ -143,6 +143,8 @@ def offer_note(lines):
         title = line["store_product"].title_ar
         if line.get("offer") is not None:
             title = f"{title} · {line['offer'].title_ar}"
+        if line.get("variant"):
+            title = f"{title} ({line['variant']})"
         parts.append(f"{title} × {line['quantity']}")
     return "طلبية من الموقع: " + "، ".join(parts)
 
@@ -174,7 +176,7 @@ def place_order(lines, customer, request, lang, visit=None):
     items = []
     for line in lines:
         price = line["offer"].price if line.get("offer") is not None else line["store_product"].product.price
-        items.append({"product": line["store_product"].product, "quantity": line["quantity"], "unit_price": price})
+        items.append({"product": line["store_product"].product, "quantity": line["quantity"], "unit_price": price, "variant": line.get("variant") or ""})
     data = {
         "items": items,
         "customer_name": customer["name"],

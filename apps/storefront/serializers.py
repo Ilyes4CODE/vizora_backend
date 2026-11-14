@@ -3,11 +3,16 @@ from io import BytesIO
 
 from django.conf import settings
 from django.core.files.base import ContentFile
+from django.db import transaction
 from django.utils.text import slugify
 from PIL import Image, ImageOps, UnidentifiedImageError
 from rest_framework import serializers
 
-from .catalog import available_units
+from apps.catalog.models import Product, StockMovement
+from apps.catalog.services import apply_movement
+
+from .catalog import available_units, forget_stock
+from .options import clean_options
 from .models import ContactMessage, Review, StockAlert, StoreImage, StoreOffer, StorePage, StoreProduct, StoreSettings
 
 MAX_IMAGE_SIDE = 1400
@@ -172,13 +177,17 @@ class StoreProductSerializer(serializers.ModelSerializer):
     images = StoreImageSerializer(many=True, read_only=True)
     url = serializers.SerializerMethodField()
     available = serializers.SerializerMethodField()
+    new_product_name = serializers.CharField(write_only=True, required=False, allow_blank=True, max_length=150)
+    new_product_price = serializers.IntegerField(write_only=True, required=False, min_value=0, max_value=100000000)
+    new_product_stock = serializers.IntegerField(write_only=True, required=False, min_value=0, max_value=1000000)
 
     class Meta:
         model = StoreProduct
         fields = [
             "id", "product", "product_name", "product_price", "slug", "is_published", "is_featured", "sort_order",
             "title_ar", "title_en", "summary_ar", "summary_en", "description_ar", "description_en", "badge_ar", "badge_en",
-            "compare_price", "max_quantity", "offers", "images", "url", "available", "updated_at",
+            "compare_price", "max_quantity", "options", "offers", "images", "url", "available", "updated_at",
+            "new_product_name", "new_product_price", "new_product_stock",
         ]
         read_only_fields = ["updated_at"]
 
@@ -186,8 +195,40 @@ class StoreProductSerializer(serializers.ModelSerializer):
         fields = super().get_fields()
         if self.instance is not None and not isinstance(self.instance, (list, tuple)) and hasattr(self.instance, "pk"):
             fields["product"].read_only = True
+        else:
+            fields["product"].required = False
+            fields["product"].allow_null = True
+            fields["title_ar"].required = False
         fields["slug"].required = False
         return fields
+
+    def new_product(self, attrs):
+        name = " ".join(str(attrs.pop("new_product_name", "") or "").split())
+        price = attrs.pop("new_product_price", None)
+        stock = attrs.pop("new_product_stock", None)
+        if self.instance is not None or attrs.get("product"):
+            return None
+        if len(name) < 2:
+            raise serializers.ValidationError({"product": "اختر منتجاً من المخزون أو اكتب اسم منتج جديد"})
+        if Product.objects.filter(name__iexact=name).exists():
+            raise serializers.ValidationError({"new_product_name": "يوجد منتج بنفس الاسم، اختره من القائمة أو غيّر الاسم"})
+        if price is None:
+            raise serializers.ValidationError({"new_product_price": "اكتب سعر البيع"})
+        return {"name": name, "price": price, "stock": stock or 0}
+
+    def create(self, validated_data):
+        fresh = validated_data.pop("_new", None)
+        if fresh is not None:
+            with transaction.atomic():
+                product = Product.objects.create(name=fresh["name"], price=fresh["price"], is_active=True)
+                if fresh["stock"]:
+                    request = self.context.get("request")
+                    apply_movement(product.pk, StockMovement.Kind.IN, fresh["stock"], user=getattr(request, "user", None), note="مخزون أولي عند إضافة المنتج")
+                    product.refresh_from_db()
+                    forget_stock(product.pk)
+                validated_data["product"] = product
+                return super().create(validated_data)
+        return super().create(validated_data)
 
     def get_url(self, obj):
         return f"{public_base()}/p/{obj.slug}/"
@@ -201,15 +242,27 @@ class StoreProductSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("الرابط يقبل الحروف اللاتينية الصغيرة والأرقام والشرطة فقط")
         return value
 
+    def validate_options(self, value):
+        return clean_options(value)
+
     def validate_max_quantity(self, value):
         if value < 1 or value > 20:
             raise serializers.ValidationError("اختر رقماً بين 1 و 20")
         return value
 
     def validate(self, attrs):
+        fresh = self.new_product(attrs)
+        if fresh is not None:
+            attrs["_new"] = fresh
+            if not attrs.get("title_ar"):
+                attrs["title_ar"] = fresh["name"]
+        if self.instance is None and attrs.get("product") and StoreProduct.objects.filter(product=attrs["product"]).exists():
+            raise serializers.ValidationError({"product": "هذا المنتج موجود في الموقع"})
+        if self.instance is None and not attrs.get("title_ar"):
+            attrs["title_ar"] = attrs["product"].name
         product = attrs.get("product") or (self.instance.product if self.instance else None)
         if self.instance is None and not attrs.get("slug"):
-            base = slugify(attrs.get("title_en") or "") or f"product-{product.pk if product else 'new'}"
+            base = slugify(attrs.get("title_en") or "") or f"product-{product.pk if product else StoreProduct.objects.count() + 1}"
             slug = base
             index = 2
             while StoreProduct.objects.filter(slug=slug).exists():

@@ -5,6 +5,7 @@ from apps.shipping.stock import remote_product, reserved_quantity
 
 from .models import StoreImage, StoreOffer, StoreProduct
 from .text import pick
+from .options import option_rows
 
 STOCK_CACHE_SECONDS = 60
 LOW_STOCK = 10
@@ -91,6 +92,7 @@ def card(store_product, lang):
         "several_prices": len(set(prices)) > 1,
         "compare_price": store_product.compare_price,
         "offers": offers,
+        "options": option_rows(store_product.options, lang),
         "images": image_rows(store_product, lang),
         "available": units,
         "state": state,

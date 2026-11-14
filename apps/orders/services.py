@@ -57,13 +57,19 @@ def delivery_fee_for(wilaya, delivery_type):
     return wilaya.home_fee
 
 
+def clean_variant(value):
+    return " ".join(str(value or "").split())[:150]
+
+
 def merge_items(items):
-    merged = defaultdict(int)
-    products = {}
+    merged = {}
     for item in items:
-        merged[item["product"].pk] += item["quantity"]
-        products[item["product"].pk] = item["product"]
-    return [(products[key], quantity) for key, quantity in merged.items()]
+        key = (item["product"].pk, clean_variant(item.get("variant")))
+        if key in merged:
+            merged[key][1] += item["quantity"]
+        else:
+            merged[key] = [item["product"], item["quantity"], key[1]]
+    return [tuple(row) for row in merged.values()]
 
 
 def priced_items(items):
@@ -71,11 +77,12 @@ def priced_items(items):
     for item in items:
         product = item["product"]
         price = item.get("unit_price", product.price)
-        key = (product.pk, price)
+        variant = clean_variant(item.get("variant"))
+        key = (product.pk, price, variant)
         if key in merged:
             merged[key][1] += item["quantity"]
         else:
-            merged[key] = [product, item["quantity"], price]
+            merged[key] = [product, item["quantity"], price, variant]
     return [tuple(row) for row in merged.values()]
 
 
@@ -111,7 +118,7 @@ def create_order(data, user, source="manual", event_message="أضيفت الطل
     wilaya = data["wilaya"]
     delivery_type = data.get("delivery_type", DeliveryType.HOME)
     fee = delivery_fee_for(wilaya, delivery_type)
-    subtotal = sum(price * quantity for product, quantity, price in items)
+    subtotal = sum(price * quantity for product, quantity, price, variant in items)
     order = Order.objects.create(
         customer_name=data["customer_name"],
         phone=data["phone"],
@@ -133,8 +140,8 @@ def create_order(data, user, source="manual", event_message="أضيفت الطل
     order.save(update_fields=["reference"])
     OrderItem.objects.bulk_create(
         [
-            OrderItem(order=order, product=product, quantity=quantity, unit_price=price, unit_cost=product.cost)
-            for product, quantity, price in items
+            OrderItem(order=order, product=product, quantity=quantity, unit_price=price, unit_cost=product.cost, variant=variant)
+            for product, quantity, price, variant in items
         ]
     )
     add_event(order, event_message, user=user)
@@ -167,14 +174,26 @@ def update_order(order_id, data, user):
         items = merge_items(data["items"])
         if order.status == OrderStatus.CONFIRMED:
             current = order_quantities(order)
-            extra = {product.pk: quantity - current.get(product.pk, 0) for product, quantity in items}
+            wanted = defaultdict(int)
+            for product, quantity, variant in items:
+                wanted[product.pk] += quantity
+            extra = {key: quantity - current.get(key, 0) for key, quantity in wanted.items()}
             ensure_available({key: value for key, value in extra.items() if value > 0})
-        kept_prices = {item.product_id: item.unit_price for item in order.items.all()}
+        existing = list(order.items.all())
+        kept_prices = {(item.product_id, item.variant): item.unit_price for item in existing}
+        product_prices = {item.product_id: item.unit_price for item in existing}
         order.items.all().delete()
         OrderItem.objects.bulk_create(
             [
-                OrderItem(order=order, product=product, quantity=quantity, unit_price=kept_prices.get(product.pk, product.price), unit_cost=product.cost)
-                for product, quantity in items
+                OrderItem(
+                    order=order,
+                    product=product,
+                    quantity=quantity,
+                    unit_price=kept_prices.get((product.pk, variant), product_prices.get(product.pk, product.price)),
+                    unit_cost=product.cost,
+                    variant=variant,
+                )
+                for product, quantity, variant in items
             ]
         )
     order.delivery_fee = delivery_fee_for(order.wilaya, order.delivery_type)

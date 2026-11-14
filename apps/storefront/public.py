@@ -13,6 +13,7 @@ from apps.shipping.models import Stage
 from . import catalog, layouts
 from .conversions import browser_events, content_id
 from .models import ContactMessage, Review, StockAlert, StorePage, StoreSettings
+from .options import choose
 from .ordering import StoreError, bot_check, clean_customer, clean_phone, clean_text, client_ip, form_stamp, place_order
 from .templatetags.store import illustration, illustration_path
 from .text import LANGUAGES, pick, text_for
@@ -157,6 +158,8 @@ def order_lines(order, lang):
         store_product = getattr(line.product, "store", None)
         if store_product is not None:
             title = pick(store_product, "title", lang)
+        if line.variant:
+            title = f"{title} ({line.variant})"
         rows.append({"id": content_id(line.product), "title": title, "quantity": line.quantity, "price": line.unit_price, "total": line.unit_price * line.quantity})
     return rows
 
@@ -183,7 +186,10 @@ def parse_lines(raw, t):
             return None, t["err_quantity"]
         if quantity < 1 or quantity > item.max_quantity:
             return None, t["err_quantity"]
-        lines.append({"store_product": item, "offer": offer, "quantity": quantity})
+        variant, problem = choose(item.options, row.get("options"))
+        if problem:
+            return None, t[problem]
+        lines.append({"store_product": item, "offer": offer, "quantity": quantity, "variant": variant})
     return lines, None
 
 

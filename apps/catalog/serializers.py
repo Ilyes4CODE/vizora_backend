@@ -5,10 +5,48 @@ from .services import stock_levels
 
 
 class ProductSerializer(serializers.ModelSerializer):
+    name = serializers.CharField(max_length=150)
+    sku = serializers.CharField(max_length=60, required=False, allow_blank=True, allow_null=True)
+    courier_ref = serializers.CharField(max_length=60, required=False, allow_blank=True)
+    price = serializers.IntegerField(min_value=0, max_value=100000000)
+    cost = serializers.IntegerField(min_value=0, max_value=100000000, required=False)
+    low_stock_threshold = serializers.IntegerField(min_value=0, max_value=1000000, required=False)
+
     class Meta:
         model = Product
         fields = ["id", "name", "sku", "price", "cost", "low_stock_threshold", "courier_ref", "image", "is_active", "created_at"]
         read_only_fields = ["created_at"]
+
+    def others(self):
+        queryset = Product.objects.all()
+        return queryset.exclude(pk=self.instance.pk) if self.instance is not None else queryset
+
+    def validate_name(self, value):
+        value = " ".join(value.split())
+        if len(value) < 2:
+            raise serializers.ValidationError("اكتب اسم المنتج")
+        if self.others().filter(name__iexact=value).exists():
+            raise serializers.ValidationError("يوجد منتج بنفس الاسم، اختر اسماً آخر")
+        return value
+
+    def validate_sku(self, value):
+        value = (value or "").strip()
+        if not value:
+            return None
+        if self.others().filter(sku__iexact=value).exists():
+            raise serializers.ValidationError("هذا الرمز مستعمل لمنتج آخر")
+        return value
+
+    def validate_courier_ref(self, value):
+        value = (value or "").strip()
+        if value and self.others().filter(courier_ref=value).exists():
+            raise serializers.ValidationError("هذا المعرّف مربوط بمنتج آخر")
+        return value
+
+    def validate(self, attrs):
+        if self.instance is None and "is_active" not in getattr(self, "initial_data", {}):
+            attrs["is_active"] = True
+        return attrs
 
     def to_representation(self, instance):
         data = super().to_representation(instance)

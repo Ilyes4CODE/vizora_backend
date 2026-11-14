@@ -76,6 +76,7 @@ class StoreProduct(models.Model):
     badge_en = models.CharField(max_length=40, blank=True)
     compare_price = models.PositiveIntegerField(null=True, blank=True)
     max_quantity = models.PositiveSmallIntegerField(default=5)
+    options = models.JSONField(default=list, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

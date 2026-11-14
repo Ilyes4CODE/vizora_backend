@@ -219,9 +219,16 @@ class LiveMaystroClient:
         lines = []
         for item in order.items.select_related("product"):
             if not item.product.courier_ref:
-                raise MaystroError(f"المنتج «{item.product.name}» غير مربوط بـ Maystro", "product_not_linked")
+                raise MaystroError(f"المنتج «{item.product.name}» غير مربوط بـ Maystro: أنشئه في Maystro بنفس الاسم وسيُربط تلقائياً، أو ضع معرّفه في «المنتجات والمخزون»", "product_not_linked")
             lines.append({"product": item.product.courier_ref, "quantity": item.quantity})
         return lines
+
+    def driver_note(self, order):
+        parts = [order.note.strip()] if order.note and order.note.strip() else []
+        for item in order.items.select_related("product"):
+            if item.variant and item.variant not in (order.note or ""):
+                parts.append(f"{item.product.name}: {item.variant} × {item.quantity}")
+        return " | ".join(parts)[:500] or None
 
     def build_payload(self, order):
         return {
@@ -233,7 +240,7 @@ class LiveMaystroClient:
             "delivery_type": STOP_DESK_DELIVERY if order.delivery_type == "desk" else HOME_DELIVERY,
             "total_price": order.total,
             "express": False,
-            "note_to_driver": order.note or None,
+            "note_to_driver": self.driver_note(order),
             "details": self.details(order),
         }
 

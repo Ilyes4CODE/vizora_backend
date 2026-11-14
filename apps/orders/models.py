@@ -84,6 +84,7 @@ class OrderItem(models.Model):
     quantity = models.PositiveIntegerField()
     unit_price = models.PositiveIntegerField()
     unit_cost = models.PositiveIntegerField()
+    variant = models.CharField(max_length=150, blank=True)
 
 
 class OrderEvent(models.Model):
