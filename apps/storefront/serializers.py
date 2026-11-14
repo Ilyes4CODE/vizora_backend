@@ -16,6 +16,8 @@ SLUG_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 
 def public_base():
+    if settings.STORE_PUBLIC_URL:
+        return settings.STORE_PUBLIC_URL
     host = settings.STORE_HOSTS[0] if settings.STORE_HOSTS else "vizorawear.com"
     return f"https://{host}"
 

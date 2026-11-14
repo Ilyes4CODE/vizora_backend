@@ -10,7 +10,7 @@ from apps.core.models import BusinessProfile, Commune, Wilaya
 from apps.orders.models import Order, OrderStatus
 from apps.shipping.models import Stage
 
-from . import catalog
+from . import catalog, layouts
 from .conversions import browser_events, content_id
 from .models import ContactMessage, Review, StockAlert, StorePage, StoreSettings
 from .ordering import StoreError, bot_check, clean_customer, clean_phone, clean_text, client_ip, form_stamp, place_order
@@ -21,6 +21,7 @@ TRACK_LIMIT = 20
 TRACK_WINDOW = 600
 CONTACT_LIMIT = 5
 CART_LIMIT = 10
+VISIT_WINDOW = 1800
 ILLUSTRATIONS = (
     "hero-1", "hero-2", "hero-3", "card-hero", "service-topup", "service-games", "feature-delivery", "feature-cod",
     "feature-guarantee", "step-1-order", "step-2-call", "step-3-ship", "step-4-receive", "promo", "thank-you", "track",
@@ -89,6 +90,8 @@ def shop_config(lang):
             for review in Review.objects.filter(is_published=True)[:6]
         ],
         "illustrations": {name: illustration(name) for name in ILLUSTRATIONS if illustration_path(name)},
+        "design": layouts.site_data(),
+        "home": layouts.home_sections(),
     }
 
 
@@ -317,3 +320,31 @@ class ShopNotifyView(PublicView):
         StockAlert.objects.get_or_create(store_product=item, phone=phone, defaults={"lang": lang})
         return Response({"saved": True}, status=201)
 
+
+
+class ShopLandingView(PublicView):
+    def get(self, request, slug):
+        lang = lang_of(request)
+        preview = layouts.valid_token(request.query_params.get("preview"))
+        layout, data = layouts.landing_for(slug, preview=preview)
+        if layout is None:
+            return Response({"detail": text_for(lang)["not_found_title"]}, status=404)
+        return Response({**layouts.landing_payload(layout, data), "preview": preview})
+
+
+class ShopLandingVisitView(PublicView):
+    def post(self, request, slug):
+        layout, _ = layouts.landing_for(slug)
+        if layout is None:
+            return Response({"detail": "not found"}, status=404)
+        key = f"store-landing-visit-{layout.pk}-{client_ip(request)}"
+        if cache.add(key, 1, VISIT_WINDOW):
+            layouts.count_visit(layout)
+        return Response({"counted": True})
+
+
+class ShopPreviewView(PublicView):
+    def get(self, request):
+        if not layouts.valid_token(request.query_params.get("token")):
+            return Response({"detail": "رابط المعاينة غير صالح"}, status=403)
+        return Response({"site": layouts.site_data(preview=True), "home": layouts.home_sections(preview=True)})

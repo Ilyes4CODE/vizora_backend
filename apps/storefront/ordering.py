@@ -11,6 +11,7 @@ from apps.orders.services import PHONE_PATTERN, create_order, normalize_phone
 
 from .catalog import available_units, forget_stock
 from .conversions import order_placed
+from .layouts import landing_from_visit
 from .models import OrderOrigin, StoreSettings
 
 FORM_SALT = "vizora-store-form"
@@ -19,6 +20,7 @@ MAX_FORM_AGE = 60 * 60 * 24
 DUPLICATE_DAYS = 7
 TRACKED_UTM = ("utm_source", "utm_medium", "utm_campaign")
 AD_FIELDS = {"page_url": 500, "fbp": 120, "fbc": 500, "ttp": 120, "ttclid": 500}
+LANDING_FIELD = 60
 
 
 class StoreError(Exception):
@@ -110,6 +112,7 @@ def clean_visit(raw):
         data[key] = clean_text(raw.get(key), limit).replace(" ", "")
     if data["page_url"] and not data["page_url"].startswith(("https://", "http://")):
         data["page_url"] = ""
+    data["landing"] = clean_text(raw.get("landing"), LANDING_FIELD).lower()
     return data
 
 
@@ -195,6 +198,7 @@ def place_order(lines, customer, request, lang, visit=None):
             utm_campaign=visit.get("utm_campaign", ""),
             referrer=visit.get("referrer", ""),
             **{key: visit.get(key, "") for key in AD_FIELDS},
+            landing=landing_from_visit(visit.get("landing")),
         )
     for product_id in needed:
         forget_stock(product_id)

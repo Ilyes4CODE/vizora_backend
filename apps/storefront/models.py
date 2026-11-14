@@ -31,6 +31,7 @@ class StoreSettings(SingletonModel):
     tiktok_server_since = models.DateTimeField(null=True, blank=True)
     tiktok_test_code = models.CharField(max_length=40, blank=True)
     purchase_moment = models.CharField(max_length=10, choices=PurchaseMoment.choices, default=PurchaseMoment.PLACED)
+    design_token = models.CharField(max_length=64, blank=True)
     orders_per_hour = models.PositiveSmallIntegerField(default=5)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -182,6 +183,7 @@ class OrderOrigin(models.Model):
     fbc = models.CharField(max_length=500, blank=True)
     ttp = models.CharField(max_length=120, blank=True)
     ttclid = models.CharField(max_length=500, blank=True)
+    landing = models.ForeignKey("storefront.Layout", null=True, blank=True, on_delete=models.SET_NULL, related_name="origins")
     created_at = models.DateTimeField(default=timezone.now, db_index=True)
 
 
@@ -206,3 +208,61 @@ class PixelEvent(models.Model):
 
     class Meta:
         ordering = ["-created_at", "-id"]
+
+
+class Layout(models.Model):
+    class Kind(models.TextChoices):
+        SITE = "site", "الشكل العام"
+        HOME = "home", "الصفحة الرئيسية"
+        LANDING = "landing", "صفحة هبوط"
+
+    kind = models.CharField(max_length=10, choices=Kind.choices)
+    slug = models.SlugField(max_length=60, unique=True)
+    name = models.CharField(max_length=120)
+    store_product = models.ForeignKey(StoreProduct, null=True, blank=True, on_delete=models.SET_NULL, related_name="landings")
+    lang = models.CharField(max_length=2, default="ar")
+    draft = models.JSONField(default=dict)
+    published = models.JSONField(null=True, blank=True)
+    is_live = models.BooleanField(default=False)
+    published_at = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["kind", "-created_at", "id"]
+
+    def __str__(self):
+        return self.name
+
+    @property
+    def has_changes(self):
+        return self.published is None or self.draft != self.published
+
+
+class LayoutVersion(models.Model):
+    layout = models.ForeignKey(Layout, on_delete=models.CASCADE, related_name="versions")
+    data = models.JSONField()
+    created_by = models.ForeignKey("accounts.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+
+
+class DesignImage(models.Model):
+    image = models.ImageField(upload_to="design/")
+    width = models.PositiveIntegerField(default=0)
+    height = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+
+
+class LandingVisit(models.Model):
+    layout = models.ForeignKey(Layout, on_delete=models.CASCADE, related_name="visits")
+    day = models.DateField()
+    count = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["layout", "day"], name="unique_landing_visit_day")]

@@ -38,6 +38,8 @@ ALLOWED_HOSTS += [host for host in STORE_HOSTS if host not in ALLOWED_HOSTS]
 CONVERSIONS_META_URL = os.environ.get("CONVERSIONS_META_URL", "https://graph.facebook.com/v23.0")
 CONVERSIONS_TIKTOK_URL = os.environ.get("CONVERSIONS_TIKTOK_URL", "https://business-api.tiktok.com/open_api/v1.3/event/track/")
 CONVERSIONS_SYNC = env_bool("CONVERSIONS_SYNC")
+STORE_PUBLIC_URL = os.environ.get("STORE_PUBLIC_URL", "").rstrip("/")
+STORE_PREVIEW_ANCESTORS = env_list("STORE_PREVIEW_ANCESTORS") or ["app://vizora"]
 
 INSTALLED_APPS = [
     "django.contrib.auth",

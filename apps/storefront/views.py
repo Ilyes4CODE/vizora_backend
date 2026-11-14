@@ -2,6 +2,7 @@ import json
 import os
 import re
 
+from django.conf import settings
 from django.contrib.staticfiles import finders
 from django.http import HttpResponse
 from django.utils.html import escape
@@ -9,7 +10,7 @@ from django.views.decorators.http import require_GET
 
 from apps.core.models import BusinessProfile
 
-from . import catalog
+from . import catalog, layouts
 from .models import StorePage
 from .public import shop_config
 from .text import LANGUAGES, pick, text_for
@@ -27,7 +28,10 @@ ROUTES = [
     (re.compile(r"^thanks/[-A-Za-z0-9]+/$"), "thanks"),
     (re.compile(r"^track/$"), "track"),
     (re.compile(r"^page/(?P<slug>[-a-z0-9]+)/$"), "page"),
+    (re.compile(r"^l/(?P<slug>[-a-z0-9]+)/$"), "landing"),
 ]
+THEME_KEY = re.compile(r"--[a-z0-9-]+")
+THEME_VALUE = re.compile(r"[#\w\s\",.()-]+")
 PRIVATE = {"cart", "checkout", "thanks", "track"}
 _index = {"mtime": None, "text": FALLBACK_INDEX}
 
@@ -62,7 +66,25 @@ def json_script(data):
     return json.dumps(data, ensure_ascii=False, default=str).replace("</", "<\\/")
 
 
-def page_meta(request, lang, rest):
+def landing_meta(request, meta, lang, slug, preview):
+    t = text_for(lang)
+    layout, data = layouts.landing_for(slug, preview=preview)
+    if layout is None:
+        meta.update(status=404, title=f"{t['not_found_title']} · Vizora Global", noindex=True)
+        return meta
+    page = data["page"]
+    card = layouts.landing_payload(layout, data)["product"]
+    title = page["seo_title"].get(layout.lang) or (card["title"] if card else layout.name)
+    description = page["seo_description"].get(layout.lang) or (card["summary"] if card else "") or t["meta_description"]
+    meta.update(title=title, description=description, landing=True)
+    if page["share_image"]:
+        meta["image"] = request.build_absolute_uri(page["share_image"])
+    elif card and card["images"]:
+        meta["image"] = request.build_absolute_uri(card["images"][0]["url"])
+    return meta
+
+
+def page_meta(request, lang, rest, preview=False):
     t = text_for(lang)
     name, params = match_route(rest)
     meta = {
@@ -118,9 +140,21 @@ def page_meta(request, lang, rest):
             meta.update(status=404, title=f"{t['not_found_title']} · Vizora Global", noindex=True)
         else:
             meta["title"] = f"{pick(entry, 'title', lang)} · Vizora Global"
+    elif name == "landing":
+        landing_meta(request, meta, lang, params["slug"], preview)
     elif name in PRIVATE:
         meta["title"] = f"{t.get(name + '_title', t['cart_title'])} · Vizora Global"
+    if preview:
+        meta["noindex"] = True
     return meta
+
+
+def theme_html(site):
+    rules = ";".join(f"{key}:{value}" for key, value in site["vars"].items() if THEME_KEY.fullmatch(key) and THEME_VALUE.fullmatch(str(value)))
+    tags = [f'<style id="theme-vars">:root{{{rules}}}</style>']
+    if site["font"]:
+        tags.append(f'<link rel="stylesheet" href="{escape(site["font"])}">')
+    return "\n".join(tags)
 
 
 def head_html(request, lang, rest, meta):
@@ -147,20 +181,29 @@ def head_html(request, lang, rest, meta):
         tags.append('<meta name="robots" content="noindex">')
     if meta["structured"]:
         tags.append(f'<script type="application/ld+json">{json_script(meta["structured"])}</script>')
+    if meta.get("landing"):
+        tags = [tag for tag in tags if "hreflang" not in tag]
     return "\n".join(tags)
 
 
 def render_app(request, path, status=None):
     lang, rest = split_lang(path)
-    meta = page_meta(request, lang, rest)
+    preview = layouts.valid_token(request.GET.get("preview"))
+    meta = page_meta(request, lang, rest, preview)
     config = shop_config(lang)
+    if preview:
+        config["design"] = layouts.site_data(preview=True)
+        config["home"] = layouts.home_sections(preview=True)
     html = app_index()
     html = html.replace('<html lang="ar" dir="rtl">', f'<html lang="{lang}" dir="{text_for(lang)["dir"]}">', 1)
-    html = html.replace(HEAD_MARK, head_html(request, lang, rest, meta), 1)
+    html = html.replace(HEAD_MARK, head_html(request, lang, rest, meta) + "\n" + theme_html(config["design"]), 1)
     html = html.replace(CONFIG_MARK, f'<script id="shop-config" type="application/json">{json_script(config)}</script>', 1)
     response = HttpResponse(html, status=status or meta["status"])
     response["Content-Language"] = lang
-    response["Cache-Control"] = "no-cache"
+    response["Cache-Control"] = "no-store" if preview else "no-cache"
+    if preview:
+        response.xframe_options_exempt = True
+        response["Content-Security-Policy"] = "frame-ancestors " + " ".join(["'self'", *settings.STORE_PREVIEW_ANCESTORS])
     return response
 
 
