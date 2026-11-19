@@ -89,9 +89,13 @@ class ProductSerializer(serializers.ModelSerializer):
         return product
 
     def update(self, instance, validated_data):
-        product = super().update(instance, validated_data)
         from apps.storefront.catalog import forget_stock
+        from apps.storefront.products import add_to_store
 
+        priced_now = instance.price < 1 and validated_data.get("price", instance.price) >= 1
+        product = super().update(instance, validated_data)
+        if priced_now and product.is_active and product.courier_ref and getattr(product, "store", None) is None:
+            add_to_store(product)
         forget_stock(product.pk)
         return product
 

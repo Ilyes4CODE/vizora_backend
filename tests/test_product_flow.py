@@ -140,3 +140,24 @@ class ProductFlowTests(StoreTestCase):
         product = Product.objects.get(name="سروال جينز")
         self.assertEqual((product.courier_ref, product.stock_source, product.on_hand), (REMOTE_ID, "maystro", 0))
         self.assertEqual(response.data["available"], 0)
+
+    def test_a_product_from_maystro_goes_on_the_store_once_it_has_a_price(self):
+        adopted = Product.objects.create(name="منتج من Maystro", price=0, courier_ref="m-adopted")
+        local = Product.objects.create(name="منتج داخلي بلا سعر", price=0)
+        self.assertCode(self.client.patch(f"/api/products/{adopted.pk}/", {"cost": 300}, format="multipart"), 200)
+        self.assertFalse(StoreProduct.objects.filter(product=adopted).exists())
+        priced = self.client.patch(f"/api/products/{adopted.pk}/", {"price": 1800}, format="multipart")
+        self.assertCode(priced, 200)
+        item = StoreProduct.objects.get(product=adopted)
+        self.assertEqual((item.title_ar, item.is_published), ("منتج من Maystro", True))
+        self.assertEqual(priced.data["in_store"]["id"], item.pk)
+        self.client.patch(f"/api/products/{local.pk}/", {"price": 900}, format="multipart")
+        self.assertFalse(StoreProduct.objects.filter(product=local).exists())
+
+    def test_the_store_and_dashboard_keep_maystro_stock_fresh(self):
+        with patch("apps.shipping.live.refresh_stock") as refresh:
+            self.assertCode(self.client.get("/api/shop/products/"), 200)
+            self.assertCode(self.client.get("/api/shop/products/visa-card/"), 200)
+            self.assertCode(self.client.get("/api/dashboard/"), 200)
+        self.assertEqual(refresh.call_count, 3)
+        self.assertTrue(all(call.kwargs == {"background": True} for call in refresh.call_args_list))

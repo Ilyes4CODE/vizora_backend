@@ -106,13 +106,21 @@ class ShopConfigView(PublicView):
         return Response(shop_config(lang_of(request)))
 
 
+def keep_stock_fresh():
+    from apps.shipping.live import refresh_stock
+
+    refresh_stock(background=True)
+
+
 class ShopProductsView(PublicView):
     def get(self, request):
+        keep_stock_fresh()
         return Response(catalog.cards(lang_of(request)))
 
 
 class ShopProductView(PublicView):
     def get(self, request, slug):
+        keep_stock_fresh()
         lang = lang_of(request)
         item = catalog.find(slug)
         if item is None:

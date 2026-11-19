@@ -17,6 +17,9 @@ MAX_DAILY_RANGE_DAYS = 366
 
 class DashboardView(APIView):
     def get(self, request):
+        from apps.shipping.live import refresh_stock
+
+        refresh_stock(background=True)
         return Response(dashboard(request.user, parse_month(request.query_params.get("month"))))
 
 
