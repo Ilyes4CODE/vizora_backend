@@ -16,7 +16,7 @@ REMOTE_ID = "7f1c2d3e-0000-4000-8000-00000000a001"
 
 
 def remote(name, maystro_id=REMOTE_ID, reference=""):
-    return {"id": maystro_id, "display_id": 900123, "logistical_description": name, "product_id": reference, "deleted": False, "low_stock_level": 5}
+    return {"id": maystro_id, "display_id": 9780201417291, "logistical_description": name, "product_id": reference, "deleted": False, "low_stock_level": 5}
 
 
 @override_settings(MEDIA_ROOT=tempfile.mkdtemp())
@@ -60,7 +60,7 @@ class ProductFlowTests(StoreTestCase):
         self.assertEqual(self.create_product.call_args.args[0], "تيشيرت صيفي")
         product = Product.objects.get(name="تيشيرت صيفي")
         self.assertEqual((product.courier_ref, product.stock_source, product.on_hand, product.price, product.cost), (REMOTE_ID, "local", 15, 2200, 900))
-        self.assertTrue(MaystroProduct.objects.filter(maystro_id=REMOTE_ID, name="تيشيرت صيفي").exists())
+        self.assertEqual(MaystroProduct.objects.get(maystro_id=REMOTE_ID, name="تيشيرت صيفي").display_id, 9780201417291)
         self.assertEqual((response.data["available"], response.data["stock_source"], response.data["stock_mode"]), (15, "local", "local"))
         item = StoreProduct.objects.get(product=product)
         self.assertEqual((item.slug, item.title_ar, item.title_en, item.is_published), ("summer-tee", "تيشيرت صيفي", "Summer tee", True))

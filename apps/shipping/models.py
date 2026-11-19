@@ -178,7 +178,7 @@ class ParcelCall(models.Model):
 
 class MaystroProduct(models.Model):
     maystro_id = models.CharField(max_length=64, unique=True)
-    display_id = models.PositiveIntegerField(null=True, blank=True)
+    display_id = models.PositiveBigIntegerField(null=True, blank=True)
     name = models.CharField(max_length=255)
     reference = models.CharField(max_length=120, blank=True)
     delivery_rate = models.FloatField(null=True, blank=True)
