@@ -5,6 +5,7 @@ import re
 from django.conf import settings
 from django.contrib.staticfiles import finders
 from django.http import HttpResponse
+from django.utils.cache import add_never_cache_headers
 from django.utils.html import escape
 from django.views.decorators.http import require_GET
 
@@ -200,7 +201,7 @@ def render_app(request, path, status=None):
     html = html.replace(CONFIG_MARK, f'<script id="shop-config" type="application/json">{json_script(config)}</script>', 1)
     response = HttpResponse(html, status=status or meta["status"])
     response["Content-Language"] = lang
-    response["Cache-Control"] = "no-store" if preview else "no-cache"
+    add_never_cache_headers(response)
     if preview:
         response.xframe_options_exempt = True
         response["Content-Security-Policy"] = "frame-ancestors " + " ".join(["'self'", *settings.STORE_PREVIEW_ANCESTORS])

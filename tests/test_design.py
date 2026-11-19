@@ -85,7 +85,7 @@ class DraftAndPublishTests(DesignTestCase):
         framed = self.store.get(f"/?preview={token}")
         self.assertNotIn("X-Frame-Options", framed.headers)
         self.assertIn("frame-ancestors 'self' app://vizora", framed["Content-Security-Policy"])
-        self.assertEqual(framed["Cache-Control"], "no-store")
+        self.assertIn("no-store", framed["Cache-Control"])
         self.assertIn('content="noindex"', framed.content.decode())
         self.assertEqual(embedded_config(framed.content.decode())["home"][0]["settings"]["slides"][0]["title"]["ar"], "عنوان جديد")
         self.assertEqual(self.store.get("/?preview=wrong")["X-Frame-Options"], "DENY")

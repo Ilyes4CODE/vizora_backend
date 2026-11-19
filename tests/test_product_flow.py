@@ -173,3 +173,8 @@ class ProductFlowTests(StoreTestCase):
             refresh_stock_soon()
             refresh.assert_called_once_with(background=True)
 
+    def test_api_answers_and_store_pages_are_never_cached(self):
+        for response in (self.client.get("/api/health/"), self.client.get("/api/products/"), self.client.get("/api/shop/products/"), self.store.get("/")):
+            self.assertIn("no-store", response["Cache-Control"])
+            self.assertIn("private", response["Cache-Control"])
+
