@@ -3,6 +3,7 @@ import tempfile
 from unittest.mock import patch
 
 from django.conf import settings
+from django.core.cache import cache
 from django.test import override_settings
 
 from apps.catalog.models import Product
@@ -59,15 +60,19 @@ class ProductFlowTests(StoreTestCase):
         self.create_product.assert_called_once()
         self.assertEqual(self.create_product.call_args.args[0], "تيشيرت صيفي")
         product = Product.objects.get(name="تيشيرت صيفي")
-        self.assertEqual((product.courier_ref, product.stock_source, product.on_hand, product.price, product.cost), (REMOTE_ID, "local", 15, 2200, 900))
+        self.assertEqual((product.courier_ref, product.stock_source, product.on_hand, product.price, product.cost), (REMOTE_ID, "maystro", 0, 2200, 900))
         self.assertEqual(MaystroProduct.objects.get(maystro_id=REMOTE_ID, name="تيشيرت صيفي").display_id, 9780201417291)
-        self.assertEqual((response.data["available"], response.data["stock_source"], response.data["stock_mode"]), (15, "local", "local"))
+        self.assertEqual((response.data["available"], response.data["stock_source"], response.data["stock_mode"]), (0, "maystro", "maystro"))
         item = StoreProduct.objects.get(product=product)
         self.assertEqual((item.slug, item.title_ar, item.title_en, item.is_published), ("summer-tee", "تيشيرت صيفي", "Summer tee", True))
         self.assertEqual(response.data["in_store"]["slug"], "summer-tee")
         self.assertTrue(StoreImage.objects.get(store_product=item).image.name.endswith(".webp"))
         card = self.client.get("/api/shop/products/summer-tee/").data
-        self.assertEqual((card["price"], card["available"], card["orderable"]), (2200, 15, True))
+        self.assertEqual((card["price"], card["available"], card["orderable"]), (2200, 0, False))
+        MaystroProduct.objects.filter(maystro_id=REMOTE_ID).update(stock=[{"warehouse": 15, "warehouse_name": "Oued Smar", "quantity": 120, "available_quantity": 120}])
+        cache.clear()
+        card = self.client.get("/api/shop/products/summer-tee/").data
+        self.assertEqual((card["available"], card["orderable"]), (120, True))
 
     def test_the_form_knows_whether_maystro_is_connected(self):
         self.assertEqual(self.client.get("/api/products/maystro-status/").data, {"connected": True, "store_id_set": True})
@@ -133,5 +138,5 @@ class ProductFlowTests(StoreTestCase):
         response = self.client.post("/api/store/products/", {"new_product_name": "سروال جينز", "new_product_price": 3500, "new_product_stock": 8, "new_product_maystro": True, "title_en": "Jeans"}, format="json")
         self.assertCode(response, 201)
         product = Product.objects.get(name="سروال جينز")
-        self.assertEqual((product.courier_ref, product.stock_source, product.on_hand), (REMOTE_ID, "local", 8))
-        self.assertEqual(response.data["available"], 8)
+        self.assertEqual((product.courier_ref, product.stock_source, product.on_hand), (REMOTE_ID, "maystro", 0))
+        self.assertEqual(response.data["available"], 0)

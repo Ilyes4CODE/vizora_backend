@@ -12,6 +12,7 @@ from django.db.models.functions import Coalesce, TruncDate, TruncMonth
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
+from apps.catalog.models import Product
 from apps.core.dates import local_datetime, month_bounds, parse_day
 from apps.core.exceptions import ApiError, conflict
 
@@ -271,9 +272,13 @@ def sync_products(client):
                 "stock": stock,
             },
         )
+    from apps.storefront.catalog import forget_stock
+
     from .stock import adopt_products
 
     adopt_products()
+    for product_id in Product.objects.exclude(courier_ref="").values_list("pk", flat=True):
+        forget_stock(product_id)
     MaystroConfig.objects.filter(pk=MaystroConfig.load().pk).update(live_stock_at=timezone.now())
     return len(remote)
 

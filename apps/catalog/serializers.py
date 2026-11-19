@@ -2,7 +2,7 @@ from django.db import transaction
 from rest_framework import serializers
 
 from .models import Product, StockMovement, StockSource
-from .services import apply_movement, stock_levels
+from .services import stock_levels
 
 
 class ProductSerializer(serializers.ModelSerializer):
@@ -74,18 +74,15 @@ class ProductSerializer(serializers.ModelSerializer):
 
         in_maystro = validated_data.pop("create_in_maystro", False)
         in_store = validated_data.pop("add_to_store", False)
-        initial = validated_data.pop("initial_stock", 0) or 0
+        validated_data.pop("initial_stock", None)
         title_en = validated_data.pop("title_en", "")
+        validated_data["stock_source"] = StockSource.MAYSTRO
         if in_maystro and not validated_data.get("courier_ref"):
             validated_data["courier_ref"], _ = register_in_maystro(
                 validated_data["name"], reference=validated_data.get("sku"), low_stock_level=validated_data.get("low_stock_threshold")
             )
         with transaction.atomic():
             product = super().create(validated_data)
-            if initial:
-                request = self.context.get("request")
-                apply_movement(product.pk, StockMovement.Kind.IN, initial, user=getattr(request, "user", None), note="مخزون أولي عند إضافة المنتج")
-                product.refresh_from_db()
             if in_store:
                 add_to_store(product, title_en)
         forget_stock(product.pk)

@@ -8,8 +8,7 @@ from django.utils.text import slugify
 from PIL import Image, ImageOps, UnidentifiedImageError
 from rest_framework import serializers
 
-from apps.catalog.models import Product, StockMovement
-from apps.catalog.services import apply_movement
+from apps.catalog.models import Product
 
 from .catalog import available_units, forget_stock
 from .options import clean_options
@@ -180,7 +179,7 @@ class StoreProductSerializer(serializers.ModelSerializer):
     new_product_name = serializers.CharField(write_only=True, required=False, allow_blank=True, max_length=150)
     new_product_price = serializers.IntegerField(write_only=True, required=False, min_value=0, max_value=100000000)
     new_product_stock = serializers.IntegerField(write_only=True, required=False, min_value=0, max_value=1000000)
-    new_product_maystro = serializers.BooleanField(write_only=True, required=False, default=False)
+    new_product_maystro = serializers.BooleanField(write_only=True, required=False, default=True)
 
     class Meta:
         model = StoreProduct
@@ -227,12 +226,8 @@ class StoreProductSerializer(serializers.ModelSerializer):
 
                 courier_ref, _ = register_in_maystro(fresh["name"])
             with transaction.atomic():
-                product = Product.objects.create(name=fresh["name"], price=fresh["price"], is_active=True, courier_ref=courier_ref, stock_source="local")
-                if fresh["stock"]:
-                    request = self.context.get("request")
-                    apply_movement(product.pk, StockMovement.Kind.IN, fresh["stock"], user=getattr(request, "user", None), note="مخزون أولي عند إضافة المنتج")
-                    product.refresh_from_db()
-                    forget_stock(product.pk)
+                product = Product.objects.create(name=fresh["name"], price=fresh["price"], is_active=True, courier_ref=courier_ref, stock_source="maystro")
+                forget_stock(product.pk)
                 validated_data["product"] = product
                 return super().create(validated_data)
         return super().create(validated_data)
