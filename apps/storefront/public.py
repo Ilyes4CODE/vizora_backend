@@ -107,9 +107,9 @@ class ShopConfigView(PublicView):
 
 
 def keep_stock_fresh():
-    from apps.shipping.live import refresh_stock
+    from apps.shipping.live import refresh_stock_soon
 
-    refresh_stock(background=True)
+    refresh_stock_soon()
 
 
 class ShopProductsView(PublicView):

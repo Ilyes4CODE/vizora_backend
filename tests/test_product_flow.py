@@ -155,9 +155,21 @@ class ProductFlowTests(StoreTestCase):
         self.assertFalse(StoreProduct.objects.filter(product=local).exists())
 
     def test_the_store_and_dashboard_keep_maystro_stock_fresh(self):
-        with patch("apps.shipping.live.refresh_stock") as refresh:
+        with patch("apps.shipping.live.refresh_stock_soon") as refresh:
             self.assertCode(self.client.get("/api/shop/products/"), 200)
             self.assertCode(self.client.get("/api/shop/products/visa-card/"), 200)
             self.assertCode(self.client.get("/api/dashboard/"), 200)
         self.assertEqual(refresh.call_count, 3)
-        self.assertTrue(all(call.kwargs == {"background": True} for call in refresh.call_args_list))
+
+    def test_background_check_waits_for_the_first_full_sync(self):
+        from django.utils import timezone
+
+        from apps.shipping.live import refresh_stock_soon
+
+        with patch("apps.shipping.live.refresh_stock") as refresh:
+            self.assertFalse(refresh_stock_soon())
+            refresh.assert_not_called()
+            MaystroConfig.objects.update(live_stock_at=timezone.now())
+            refresh_stock_soon()
+            refresh.assert_called_once_with(background=True)
+

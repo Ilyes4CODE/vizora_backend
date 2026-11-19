@@ -183,6 +183,13 @@ def stock_in_background(config):
         connection.close()
 
 
+def refresh_stock_soon():
+    config = MaystroConfig.load()
+    if not is_ready(config) or config.live_stock_at is None:
+        return False
+    return refresh_stock(background=True)
+
+
 def refresh_stock(force=False, background=False):
     config = MaystroConfig.load()
     if not is_ready(config):
