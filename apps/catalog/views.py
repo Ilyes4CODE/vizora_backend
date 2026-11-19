@@ -26,6 +26,11 @@ class ProductViewSet(viewsets.ModelViewSet):
         refresh_stock(background=True)
         return super().list(request, *args, **kwargs)
 
+    @action(detail=False, methods=["get"], url_path="maystro-status")
+    def maystro_status(self, request):
+        config = MaystroConfig.load()
+        return Response({"connected": bool(config.encrypted_token), "store_id_set": bool(config.store_id)})
+
     @action(detail=False, methods=["post"], url_path="sync-maystro")
     def sync_maystro(self, request):
         if not refresh_stock(force=True):

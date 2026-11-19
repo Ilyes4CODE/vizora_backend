@@ -1,7 +1,8 @@
+from django.db import transaction
 from rest_framework import serializers
 
-from .models import Product, StockMovement
-from .services import stock_levels
+from .models import Product, StockMovement, StockSource
+from .services import apply_movement, stock_levels
 
 
 class ProductSerializer(serializers.ModelSerializer):
@@ -11,11 +12,24 @@ class ProductSerializer(serializers.ModelSerializer):
     price = serializers.IntegerField(min_value=0, max_value=100000000)
     cost = serializers.IntegerField(min_value=0, max_value=100000000, required=False)
     low_stock_threshold = serializers.IntegerField(min_value=0, max_value=1000000, required=False)
+    stock_mode = serializers.ChoiceField(source="stock_source", choices=StockSource.choices, required=False)
+    create_in_maystro = serializers.BooleanField(write_only=True, required=False, default=False)
+    add_to_store = serializers.BooleanField(write_only=True, required=False, default=False)
+    initial_stock = serializers.IntegerField(write_only=True, required=False, min_value=0, max_value=1000000)
+    title_en = serializers.CharField(write_only=True, required=False, allow_blank=True, max_length=150)
+    in_store = serializers.SerializerMethodField()
 
     class Meta:
         model = Product
-        fields = ["id", "name", "sku", "price", "cost", "low_stock_threshold", "courier_ref", "image", "is_active", "created_at"]
+        fields = [
+            "id", "name", "sku", "price", "cost", "low_stock_threshold", "courier_ref", "stock_mode", "image", "is_active", "created_at",
+            "create_in_maystro", "add_to_store", "initial_stock", "title_en", "in_store",
+        ]
         read_only_fields = ["created_at"]
+
+    def get_in_store(self, obj):
+        store_product = getattr(obj, "store", None)
+        return {"id": store_product.pk, "slug": store_product.slug, "is_published": store_product.is_published} if store_product else None
 
     def others(self):
         queryset = Product.objects.all()
@@ -46,7 +60,43 @@ class ProductSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         if self.instance is None and "is_active" not in getattr(self, "initial_data", {}):
             attrs["is_active"] = True
+        if self.instance is not None:
+            for key in ("create_in_maystro", "add_to_store", "initial_stock", "title_en"):
+                attrs.pop(key, None)
+        elif attrs.get("add_to_store") and attrs.get("price", 0) < 1:
+            raise serializers.ValidationError({"price": "اكتب سعر البيع لنشر المنتج في الموقع"})
         return attrs
+
+    def create(self, validated_data):
+        from apps.shipping.products import register_in_maystro
+        from apps.storefront.catalog import forget_stock
+        from apps.storefront.products import add_to_store
+
+        in_maystro = validated_data.pop("create_in_maystro", False)
+        in_store = validated_data.pop("add_to_store", False)
+        initial = validated_data.pop("initial_stock", 0) or 0
+        title_en = validated_data.pop("title_en", "")
+        if in_maystro and not validated_data.get("courier_ref"):
+            validated_data["courier_ref"], _ = register_in_maystro(
+                validated_data["name"], reference=validated_data.get("sku"), low_stock_level=validated_data.get("low_stock_threshold")
+            )
+        with transaction.atomic():
+            product = super().create(validated_data)
+            if initial:
+                request = self.context.get("request")
+                apply_movement(product.pk, StockMovement.Kind.IN, initial, user=getattr(request, "user", None), note="مخزون أولي عند إضافة المنتج")
+                product.refresh_from_db()
+            if in_store:
+                add_to_store(product, title_en)
+        forget_stock(product.pk)
+        return product
+
+    def update(self, instance, validated_data):
+        product = super().update(instance, validated_data)
+        from apps.storefront.catalog import forget_stock
+
+        forget_stock(product.pk)
+        return product
 
     def to_representation(self, instance):
         data = super().to_representation(instance)

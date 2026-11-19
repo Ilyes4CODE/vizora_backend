@@ -19,7 +19,7 @@ def live_config():
 
 
 def remote_product(product, config=None):
-    if not product.courier_ref:
+    if not product.courier_ref or product.stock_source == "local":
         return None
     if config is None:
         config = live_config()

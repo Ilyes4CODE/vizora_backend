@@ -180,6 +180,7 @@ class StoreProductSerializer(serializers.ModelSerializer):
     new_product_name = serializers.CharField(write_only=True, required=False, allow_blank=True, max_length=150)
     new_product_price = serializers.IntegerField(write_only=True, required=False, min_value=0, max_value=100000000)
     new_product_stock = serializers.IntegerField(write_only=True, required=False, min_value=0, max_value=1000000)
+    new_product_maystro = serializers.BooleanField(write_only=True, required=False, default=False)
 
     class Meta:
         model = StoreProduct
@@ -187,7 +188,7 @@ class StoreProductSerializer(serializers.ModelSerializer):
             "id", "product", "product_name", "product_price", "slug", "is_published", "is_featured", "sort_order",
             "title_ar", "title_en", "summary_ar", "summary_en", "description_ar", "description_en", "badge_ar", "badge_en",
             "compare_price", "max_quantity", "options", "offers", "images", "url", "available", "updated_at",
-            "new_product_name", "new_product_price", "new_product_stock",
+            "new_product_name", "new_product_price", "new_product_stock", "new_product_maystro",
         ]
         read_only_fields = ["updated_at"]
 
@@ -206,6 +207,7 @@ class StoreProductSerializer(serializers.ModelSerializer):
         name = " ".join(str(attrs.pop("new_product_name", "") or "").split())
         price = attrs.pop("new_product_price", None)
         stock = attrs.pop("new_product_stock", None)
+        maystro = attrs.pop("new_product_maystro", False)
         if self.instance is not None or attrs.get("product"):
             return None
         if len(name) < 2:
@@ -214,13 +216,18 @@ class StoreProductSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"new_product_name": "يوجد منتج بنفس الاسم، اختره من القائمة أو غيّر الاسم"})
         if price is None:
             raise serializers.ValidationError({"new_product_price": "اكتب سعر البيع"})
-        return {"name": name, "price": price, "stock": stock or 0}
+        return {"name": name, "price": price, "stock": stock or 0, "maystro": maystro}
 
     def create(self, validated_data):
         fresh = validated_data.pop("_new", None)
         if fresh is not None:
+            courier_ref = ""
+            if fresh["maystro"]:
+                from apps.shipping.products import register_in_maystro
+
+                courier_ref, _ = register_in_maystro(fresh["name"])
             with transaction.atomic():
-                product = Product.objects.create(name=fresh["name"], price=fresh["price"], is_active=True)
+                product = Product.objects.create(name=fresh["name"], price=fresh["price"], is_active=True, courier_ref=courier_ref, stock_source="local")
                 if fresh["stock"]:
                     request = self.context.get("request")
                     apply_movement(product.pk, StockMovement.Kind.IN, fresh["stock"], user=getattr(request, "user", None), note="مخزون أولي عند إضافة المنتج")

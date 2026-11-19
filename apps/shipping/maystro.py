@@ -1,6 +1,7 @@
 import base64
 import binascii
 import json
+import os
 import re
 import threading
 import time
@@ -11,9 +12,10 @@ from apps.core.excel import normalize_text
 
 from .models import MaystroConfig
 
-API_URL = "https://orders-management.maystro-delivery.com"
-STORE_ORDERS_URL = "https://backend.maystro-delivery.com/api/stores/orders/"
-STORE_BALANCE_URL = "https://backend.maystro-delivery.com/api/stores/payments/"
+API_URL = (os.environ.get("MAYSTRO_API_URL") or "https://orders-management.maystro-delivery.com").rstrip("/")
+STORE_URL = (os.environ.get("MAYSTRO_STORE_URL") or "https://backend.maystro-delivery.com").rstrip("/")
+STORE_ORDERS_URL = f"{STORE_URL}/api/stores/orders/"
+STORE_BALANCE_URL = f"{STORE_URL}/api/stores/payments/"
 MAX_PAYMENT_PAGES = 200
 REQUEST_TIMEOUT_SECONDS = 30
 MIN_REQUEST_INTERVAL = 0.21
@@ -183,6 +185,21 @@ class LiveMaystroClient:
             if not url:
                 break
         return collected
+
+    def create_product(self, name, reference=None, description=None, low_stock_level=None):
+        if not self.config.store_id:
+            raise MaystroError("أدخل معرّف متجرك في Maystro أولاً في «الحماية والنسخ» ← «ربط Maystro»", "maystro_store_missing")
+        body = {"store": self.config.store_id, "logistical_description": name}
+        if reference:
+            body["product_id"] = reference
+        if description:
+            body["comercial_description"] = description
+        if low_stock_level is not None:
+            body["low_stock_level"] = low_stock_level
+        data = self.request("POST", self.api("/api/stock/products/"), json=body)
+        if not isinstance(data, dict) or not data.get("id"):
+            raise MaystroError("رد غير متوقع من Maystro", "maystro_bad_response")
+        return data
 
     def stock_details(self, product_id):
         data = self.request("GET", self.api("/api/stock/product-details/stock-details/"), params={"product_id": product_id})

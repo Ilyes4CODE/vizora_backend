@@ -2,6 +2,11 @@ from django.conf import settings
 from django.db import models
 
 
+class StockSource(models.TextChoices):
+    MAYSTRO = "maystro", "مخازن Maystro"
+    LOCAL = "local", "عندي"
+
+
 class Product(models.Model):
     name = models.CharField(max_length=150, unique=True)
     sku = models.CharField(max_length=60, unique=True, null=True, blank=True)
@@ -10,6 +15,7 @@ class Product(models.Model):
     on_hand = models.PositiveIntegerField(default=0, editable=False)
     low_stock_threshold = models.PositiveIntegerField(default=50)
     courier_ref = models.CharField(max_length=60, blank=True)
+    stock_source = models.CharField(max_length=10, choices=StockSource.choices, default=StockSource.MAYSTRO)
     image = models.ImageField(upload_to="products/", null=True, blank=True)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
