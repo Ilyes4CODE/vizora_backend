@@ -227,6 +227,8 @@ class LiveMaystroClient:
 
     def commune_id(self, order):
         target = normalize_text(order.commune)
+        if not target:
+            raise MaystroError("اختر البلدية في الطلبية قبل إرسالها (زر «تعديل»)", "commune_missing")
         for commune in order.wilaya.communes.exclude(courier_ref=""):
             if target and target in {normalize_text(commune.name_ar), normalize_text(commune.name_fr)}:
                 return int(commune.courier_ref)

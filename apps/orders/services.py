@@ -118,6 +118,8 @@ def create_order(data, user, source="manual", event_message="أضيفت الطل
     wilaya = data["wilaya"]
     delivery_type = data.get("delivery_type", DeliveryType.HOME)
     fee = delivery_fee_for(wilaya, delivery_type)
+    if data.get("delivery_fee") is not None:
+        fee = data["delivery_fee"]
     subtotal = sum(price * quantity for product, quantity, price, variant in items)
     order = Order.objects.create(
         customer_name=data["customer_name"],
@@ -167,40 +169,48 @@ def update_order(order_id, data, user):
     order = Order.objects.select_for_update().get(pk=order_id)
     if order.status not in EDITABLE_STATUSES:
         raise conflict("لا يمكن تعديل طلبية بعد شحنها أو إغلاقها", "order_locked")
+    before = order.total
     for field in ("customer_name", "phone", "wilaya", "commune", "address", "delivery_type", "campaign", "assigned_to", "note"):
         if field in data:
             setattr(order, field, data[field])
     if "items" in data:
-        items = merge_items(data["items"])
-        if order.status == OrderStatus.CONFIRMED:
-            current = order_quantities(order)
-            wanted = defaultdict(int)
-            for product, quantity, variant in items:
-                wanted[product.pk] += quantity
-            extra = {key: quantity - current.get(key, 0) for key, quantity in wanted.items()}
-            ensure_available({key: value for key, value in extra.items() if value > 0})
         existing = list(order.items.all())
         kept_prices = {(item.product_id, item.variant): item.unit_price for item in existing}
         product_prices = {item.product_id: item.unit_price for item in existing}
+        rows = []
+        for item in data["items"]:
+            product = item["product"]
+            variant = clean_variant(item.get("variant"))
+            price = item.get("unit_price")
+            if price is None:
+                price = kept_prices.get((product.pk, variant), product_prices.get(product.pk, product.price))
+            rows.append({"product": product, "quantity": item["quantity"], "unit_price": price, "variant": variant})
+        items = priced_items(rows)
+        if order.status == OrderStatus.CONFIRMED:
+            current = order_quantities(order)
+            wanted = defaultdict(int)
+            for product, quantity, price, variant in items:
+                wanted[product.pk] += quantity
+            extra = {key: quantity - current.get(key, 0) for key, quantity in wanted.items()}
+            ensure_available({key: value for key, value in extra.items() if value > 0})
         order.items.all().delete()
         OrderItem.objects.bulk_create(
             [
-                OrderItem(
-                    order=order,
-                    product=product,
-                    quantity=quantity,
-                    unit_price=kept_prices.get((product.pk, variant), product_prices.get(product.pk, product.price)),
-                    unit_cost=product.cost,
-                    variant=variant,
-                )
-                for product, quantity, variant in items
+                OrderItem(order=order, product=product, quantity=quantity, unit_price=price, unit_cost=product.cost, variant=variant)
+                for product, quantity, price, variant in items
             ]
         )
-    order.delivery_fee = delivery_fee_for(order.wilaya, order.delivery_type)
+    if "wilaya" in data or "delivery_type" in data:
+        order.delivery_fee = delivery_fee_for(order.wilaya, order.delivery_type)
+    if data.get("delivery_fee") is not None:
+        order.delivery_fee = data["delivery_fee"]
     order.subtotal = sum(item.unit_price * item.quantity for item in order.items.all())
     order.total = order.subtotal + order.delivery_fee
     order.save()
-    add_event(order, "عُدّلت بيانات الطلبية", user=user)
+    message = "عُدّلت بيانات الطلبية"
+    if order.total != before:
+        message = f"{message} · المجموع صار {order.total:,} د.ج بدل {before:,}"
+    add_event(order, message, user=user)
     return order
 
 

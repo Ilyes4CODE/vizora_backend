@@ -54,7 +54,7 @@ class OrderViewSet(viewsets.ModelViewSet):
     http_method_names = ["get", "post", "patch", "head", "options"]
     filterset_class = OrderFilter
     search_fields = ["reference", "customer_name", "phone"]
-    ordering_fields = ["created_at", "total"]
+    ordering_fields = ["created_at", "total", "confirmed_at"]
 
     def get_queryset(self):
         return order_queryset()

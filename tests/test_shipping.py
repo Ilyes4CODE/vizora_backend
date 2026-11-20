@@ -361,6 +361,14 @@ class ConfigAndLiveClientTests(ApiTestCase):
         order = self.confirmed_order()
         self.assert_failed_without_side_effects(self.send(order), order, "commune_not_linked")
 
+    def test_missing_commune_asks_to_choose_one(self):
+        self.enable_live()
+        Product.objects.filter(pk=self.product.pk).update(courier_ref=self.PRODUCT_UUID)
+        order = self.confirmed_order(commune="")
+        response = self.send(order)
+        self.assert_failed_without_side_effects(response, order, "commune_missing")
+        self.assertIn("اختر البلدية", response.data["failed"][0]["detail"])
+
     def test_unlinked_product_blocks_sending(self):
         self.enable_live()
         Commune.objects.create(wilaya_id=16, name_ar="الدار البيضاء", courier_ref="900")

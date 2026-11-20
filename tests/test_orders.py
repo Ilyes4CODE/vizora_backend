@@ -112,6 +112,49 @@ class OrderTests(ApiTestCase):
         self.assertEqual((response.data["subtotal"], response.data["delivery_fee"], response.data["total"]), (11000, 400, 11400))
         self.assertEqual(response.data["note"], "اتصل مساءً")
 
+    def test_update_sets_item_price_quantity_and_delivery_fee(self):
+        order = self.confirmed_order()
+        response = self.client.patch(
+            f"/api/orders/{order['id']}/",
+            {"items": [{"product": self.product.pk, "quantity": 2, "unit_price": 3500}], "delivery_fee": 0},
+        )
+        self.assertCode(response, 200)
+        self.assertEqual((response.data["subtotal"], response.data["delivery_fee"], response.data["total"]), (7000, 0, 7000))
+        self.assertEqual((response.data["items"][0]["quantity"], response.data["items"][0]["unit_price"]), (2, 3500))
+        self.assertEqual(response.data["status"], "confirmed")
+        self.assertIn("المجموع صار 7,000 د.ج بدل 4,500", response.data["events"][0]["message"])
+
+    def test_custom_prices_survive_later_edits(self):
+        order = self.new_order()
+        self.client.patch(f"/api/orders/{order['id']}/", {"items": [{"product": self.product.pk, "quantity": 1, "unit_price": 3000}], "delivery_fee": 250})
+        response = self.client.patch(f"/api/orders/{order['id']}/", {"customer_name": "كريم م.", "items": [{"product": self.product.pk, "quantity": 3}]})
+        self.assertCode(response, 200)
+        self.assertEqual((response.data["subtotal"], response.data["delivery_fee"], response.data["total"]), (9000, 250, 9250))
+        response = self.client.patch(f"/api/orders/{order['id']}/", {"delivery_type": "desk"})
+        self.assertEqual(response.data["delivery_fee"], 400)
+        response = self.client.patch(f"/api/orders/{order['id']}/", {"wilaya": 31, "delivery_fee": 900})
+        self.assertEqual((response.data["wilaya"], response.data["delivery_fee"], response.data["total"]), (31, 900, 9900))
+
+    def test_update_refuses_bad_prices(self):
+        order = self.new_order()
+        for body in ({"delivery_fee": -1}, {"items": [{"product": self.product.pk, "quantity": 1, "unit_price": -5}]}, {"delivery_fee": "abc"}):
+            with self.subTest(body=body):
+                self.assertCode(self.client.patch(f"/api/orders/{order['id']}/", body), 400, "validation_error")
+        self.assertEqual(self.client.get(f"/api/orders/{order['id']}/").data["total"], 4500)
+
+    def test_confirmed_orders_list_for_sending(self):
+        self.new_order()
+        confirmed = self.confirmed_order(phone="0661002875")
+        response = self.client.get("/api/orders/", {"status": "confirmed"})
+        self.assertEqual(response.data["count"], 1)
+        row = response.data["results"][0]
+        self.assertEqual(row["id"], confirmed["id"])
+        self.assertIsNotNone(row["confirmed_at"])
+        self.assertEqual(row["total"], 4500)
+        later = self.confirmed_order(phone="0770001690")
+        rows = self.client.get("/api/orders/", {"status": "confirmed", "ordering": "-confirmed_at"}).data["results"]
+        self.assertEqual([item["id"] for item in rows], [later["id"], confirmed["id"]])
+
     def test_update_of_confirmed_order_checks_stock(self):
         order = self.confirmed_order()
         response = self.client.patch(f"/api/orders/{order['id']}/", {"items": [{"product": self.product.pk, "quantity": 500}]})

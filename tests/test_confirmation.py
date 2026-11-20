@@ -1,4 +1,5 @@
 from collections import Counter
+from unittest.mock import patch
 from datetime import timedelta
 
 from django.utils import timezone
@@ -6,6 +7,7 @@ from django.utils import timezone
 from apps.accounts.models import Role, User
 from apps.catalog.models import Product
 from apps.orders.models import Order
+from apps.shipping.models import Shipment
 
 from .base import ApiTestCase
 
@@ -38,6 +40,16 @@ class ConfirmationTests(ApiTestCase):
         self.assertEqual(response.data["call_attempts"], 1)
         self.assertEqual(response.data["events"][0]["outcome"], "confirmed")
         self.assertEqual(self.queue().data["count"], 0)
+
+    def test_confirming_never_sends_to_maystro_by_itself(self):
+        order = self.new_order()
+        with patch("apps.shipping.services.send_orders") as sending, patch("apps.shipping.maystro.LiveMaystroClient.create_order") as creating:
+            self.assertCode(self.outcome(order["id"], "confirmed"), 200)
+        sending.assert_not_called()
+        creating.assert_not_called()
+        detail = self.client.get(f"/api/orders/{order['id']}/").data
+        self.assertEqual((detail["status"], detail["shipment"]), ("confirmed", None))
+        self.assertFalse(Shipment.objects.filter(order_id=order["id"]).exists())
 
     def test_confirm_blocked_without_stock(self):
         order = self.new_order(items=[{"product": self.product.pk, "quantity": 101}])

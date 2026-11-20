@@ -22,6 +22,7 @@ class OrderItemInputSerializer(serializers.Serializer):
     product = serializers.PrimaryKeyRelatedField(queryset=Product.objects.filter(is_active=True))
     quantity = serializers.IntegerField(min_value=1, max_value=1000)
     variant = serializers.CharField(max_length=150, required=False, allow_blank=True)
+    unit_price = serializers.IntegerField(min_value=0, max_value=10_000_000, required=False)
 
 
 class OrderWriteSerializer(serializers.Serializer):
@@ -31,6 +32,7 @@ class OrderWriteSerializer(serializers.Serializer):
     commune = serializers.CharField(max_length=80, required=False, allow_blank=True)
     address = serializers.CharField(max_length=255, required=False, allow_blank=True)
     delivery_type = serializers.ChoiceField(choices=DeliveryType.choices, required=False)
+    delivery_fee = serializers.IntegerField(min_value=0, max_value=100_000, required=False)
     items = OrderItemInputSerializer(many=True, allow_empty=False)
     campaign = serializers.PrimaryKeyRelatedField(queryset=Campaign.objects.all(), required=False, allow_null=True)
     assigned_to = serializers.PrimaryKeyRelatedField(queryset=User.objects.filter(is_active=True), required=False, allow_null=True)
@@ -70,7 +72,7 @@ class OrderListSerializer(serializers.ModelSerializer):
         fields = [
             "id", "reference", "customer_name", "phone", "wilaya", "wilaya_name", "commune", "products",
             "subtotal", "delivery_fee", "total", "status", "status_label", "assigned_to", "assigned_name",
-            "call_attempts", "source", "created_at",
+            "call_attempts", "source", "created_at", "confirmed_at",
         ]
 
     def get_products(self, obj):
@@ -87,7 +89,7 @@ class OrderDetailSerializer(OrderListSerializer):
     class Meta(OrderListSerializer.Meta):
         fields = OrderListSerializer.Meta.fields + [
             "address", "delivery_type", "delivery_type_label", "campaign", "campaign_name", "note",
-            "next_call_at", "cancel_reason", "suivi_attempts", "suivi_next_at", "confirmed_at", "shipped_at",
+            "next_call_at", "cancel_reason", "suivi_attempts", "suivi_next_at", "shipped_at",
             "delivered_at", "returned_at", "cancelled_at", "items", "events", "shipment",
         ]
 
