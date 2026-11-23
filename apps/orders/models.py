@@ -21,6 +21,7 @@ class Source(models.TextChoices):
     MANUAL = "manual", "يدوية"
     EXCEL = "excel", "استيراد Excel"
     WEBSITE = "website", "الموقع"
+    SHEET = "sheet", "Google Sheet"
 
 
 class ConfirmationOutcome(models.TextChoices):
@@ -122,3 +123,43 @@ class ImportBatch(models.Model):
 
     class Meta:
         ordering = ["-created_at", "-id"]
+
+
+class SheetSource(models.Model):
+    name = models.CharField(max_length=120)
+    url = models.URLField(max_length=600)
+    start_row = models.PositiveIntegerField(default=2)
+    is_active = models.BooleanField(default=True)
+    default_product = models.ForeignKey("catalog.Product", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    total_includes_delivery = models.BooleanField(default=False)
+    baseline_row = models.PositiveIntegerField(null=True, blank=True)
+    last_synced_at = models.DateTimeField(null=True, blank=True)
+    last_sync_ok = models.BooleanField(default=True)
+    last_error = models.CharField(max_length=255, blank=True)
+    last_result = models.JSONField(default=dict, blank=True)
+    imported_count = models.PositiveIntegerField(default=0)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["id"]
+
+    def __str__(self):
+        return self.name
+
+
+class SheetRow(models.Model):
+    class Status(models.TextChoices):
+        IMPORTED = "imported", "استُوردت"
+        DUPLICATE = "duplicate", "مكررة"
+        SKIPPED = "skipped", "قبل سطر البداية"
+
+    source = models.ForeignKey(SheetSource, on_delete=models.CASCADE, related_name="rows")
+    key = models.CharField(max_length=80)
+    row_number = models.PositiveIntegerField()
+    status = models.CharField(max_length=12, choices=Status.choices)
+    order = models.ForeignKey(Order, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["source", "key"], name="unique_sheet_row_key")]

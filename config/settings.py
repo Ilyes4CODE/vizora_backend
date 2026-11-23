@@ -40,6 +40,9 @@ CONVERSIONS_TIKTOK_URL = os.environ.get("CONVERSIONS_TIKTOK_URL", "https://busin
 CONVERSIONS_SYNC = env_bool("CONVERSIONS_SYNC")
 STORE_PUBLIC_URL = os.environ.get("STORE_PUBLIC_URL", "").rstrip("/")
 STORE_PREVIEW_ANCESTORS = env_list("STORE_PREVIEW_ANCESTORS") or ["app://vizora"]
+GOOGLE_SHEETS_URL = (os.environ.get("GOOGLE_SHEETS_URL") or "https://docs.google.com").rstrip("/")
+SHEETS_SYNC_INLINE = env_bool("SHEETS_SYNC_INLINE")
+SHEETS_SYNC_SECONDS = int(os.environ.get("SHEETS_SYNC_SECONDS") or 120)
 
 INSTALLED_APPS = [
     "django.contrib.auth",

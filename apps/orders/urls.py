@@ -1,10 +1,13 @@
 from django.urls import path
 from rest_framework.routers import SimpleRouter
 
+from .sheet_api import SheetSourceViewSet
+
 from .views import ConfirmationCountsView, ConfirmationQueueView, OrderImportViewSet, OrderViewSet, OutcomeView, ParcelOutcomeView
 
 router = SimpleRouter()
 router.register("orders/import", OrderImportViewSet, basename="order-import")
+router.register("orders/sheets", SheetSourceViewSet, basename="order-sheet")
 router.register("orders", OrderViewSet, basename="order")
 
 urlpatterns = [

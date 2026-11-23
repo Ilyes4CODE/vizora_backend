@@ -29,6 +29,7 @@ from .serializers import (
     OutcomeSerializer,
     product_summary,
 )
+from .sheets import sync_sheets_soon
 from .services import (
     cancel_order,
     confirmation_queue,
@@ -58,6 +59,10 @@ class OrderViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         return order_queryset()
+
+    def list(self, request, *args, **kwargs):
+        sync_sheets_soon()
+        return super().list(request, *args, **kwargs)
 
     def get_serializer_class(self):
         if self.action == "list":
@@ -221,6 +226,7 @@ class ConfirmationCountsView(APIView):
     section = "confirmation"
 
     def get(self, request):
+        sync_sheets_soon()
         parcels = live_suivi_queue()
         return Response(
             {
