@@ -82,8 +82,21 @@ DESK_WORDS = {"desk", "stop desk", "stopdesk", "bureau", "point relais", "مكت
 _running = threading.Lock()
 
 
+ARABIC_LETTERS = str.maketrans({"ة": "ه", "ى": "ي", "ـ": ""})
+WILAYA_ALIASES = {
+    "عين صالح": 53, "in salah": 53, "ain salah": 53, "عين قزام": 54, "in guezzam": 54, "ain guezzam": 54, "تموشنت": 46,
+    "تيموشنت": 46, "عين تمشونت": 46, "عين تيموشنت": 46, "ain temouchent": 46, "واد سوف": 39, "وادي سوف": 39, "سوف": 39, "الوادي": 39,
+    "oued souf": 39, "el oued": 39, "برج بوعريرج": 34, "bba": 34, "سيدي بلعباس": 22, "سيدي بل عباس": 22, "sba": 22, "بوعريريج": 34,
+    "تمنغست": 11, "تمنراست": 11, "مسيله": 28, "msila": 28, "ام البواقي": 4, "oeb": 4, "عين دفلى": 44, "عين الدفله": 44,
+    "بشار": 8, "باجي مختار": 50, "bordj badji mokhtar": 50, "اولاد جلال": 51, "بني عباس": 52, "المنيعه": 58, "منيعه": 58, "el menia": 58,
+    "المغير": 57, "مغير": 57, "el mghair": 57, "جانت": 56, "توقرت": 55, "تقرت": 55, "touggourt": 55, "تيميمون": 49, "تميمون": 49,
+}
+
+
 def compact(value):
-    return re.sub(r"[^0-9a-z؀-ۿ]", "", normalize_text(value))
+    text = normalize_text(value).translate(ARABIC_LETTERS)
+    words = re.split(r"[^0-9a-z؀-ۿ]+", text)
+    return "".join(word[2:] if word.startswith("ال") and len(word) > 3 else word for word in words)
 
 
 ALIAS_INDEX = {compact(alias): field for field, aliases in ALIASES.items() for alias in aliases}
@@ -218,6 +231,10 @@ class Lookups:
             self.wilayas[str(wilaya.code).zfill(2)] = wilaya
             for name in (wilaya.name_ar, wilaya.name_fr):
                 self.wilayas[compact(name)] = wilaya
+        by_code = {wilaya.code: wilaya for wilaya in self.wilayas.values()}
+        for name, code in WILAYA_ALIASES.items():
+            if code in by_code:
+                self.wilayas.setdefault(compact(name), by_code[code])
         self.products = {}
         for product in Product.objects.filter(is_active=True).select_related():
             self.products[compact(product.name)] = product

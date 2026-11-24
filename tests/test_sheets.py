@@ -123,6 +123,20 @@ class SheetTests(ApiTestCase):
         last = self.orders_from_sheet().last()
         self.assertEqual((last.customer_name, last.wilaya_id, last.items.get().quantity, last.subtotal), ("hicham2", 40, 2, 29980))
 
+    def test_wilaya_names_written_in_many_ways_are_understood(self):
+        from apps.orders.models import SheetSource as Source
+        from apps.orders.sheets import Lookups
+
+        lookups = Lookups(Source(name="x"))
+        cases = {
+            "عين صالح": 53, "عين قزام": 54, "نعامة": 45, "تيموشنت": 46, "عين تمشونت": 46, "واد سوف": 39, "طارف": 36, "شلف": 2,
+            "بويرة": 10, "تقرت": 55, "Tizi-Ouzou": 15, "AIN TEMOUCHENT": 46, "Bordj Bou Arreridj": 34, "16 - Alger": 16, "07": 7,
+        }
+        for text, code in cases.items():
+            with self.subTest(text=text):
+                self.assertEqual(lookups.wilaya("", text).code, code)
+        self.assertIsNone(lookups.wilaya("", "Atlantis"))
+
     def test_rows_with_problems_wait_until_they_are_fixed(self):
         self.sheet += [
             store_row(1, "بلا ولاية", "0555004112", "Atlantis", "", "x"),
