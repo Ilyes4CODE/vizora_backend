@@ -66,6 +66,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "apps.core.middleware.NoStoreApiMiddleware",
+    "apps.core.middleware.AuditTrailMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "apps.storefront.middleware.StoreHostMiddleware",
     "corsheaders.middleware.CorsMiddleware",

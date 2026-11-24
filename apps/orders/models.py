@@ -66,6 +66,7 @@ class Order(models.Model):
     confirmed_at = models.DateTimeField(null=True, blank=True)
     confirmed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
     shipped_at = models.DateTimeField(null=True, blank=True)
+    shipped_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
     delivered_at = models.DateTimeField(null=True, blank=True, db_index=True)
     returned_at = models.DateTimeField(null=True, blank=True, db_index=True)
     cancelled_at = models.DateTimeField(null=True, blank=True)

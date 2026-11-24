@@ -42,7 +42,7 @@ from .services import (
     visible_to,
 )
 
-ORDER_RELATIONS = ("wilaya", "assigned_to", "campaign", "shipment")
+ORDER_RELATIONS = ("wilaya", "assigned_to", "campaign", "shipment", "confirmed_by", "shipped_by", "created_by")
 TEMPLATE_HEADERS = ["الاسم", "الهاتف", "الولاية", "البلدية", "العنوان", "المنتج", "الكمية", "نوع التوصيل", "الحملة", "ملاحظة"]
 
 
@@ -247,7 +247,7 @@ class ParcelOutcomeView(APIView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
         parcel = record_parcel_call(pk, data["outcome"], request.user, data.get("note", ""), data.get("next_call_at"))
-        audit.record("parcel_call_outcome", f"سجّل {data['outcome']} للطرد {parcel.display_id}", request=request)
+        audit.record("parcel_call_outcome", audit.readable(f"سجّل {data['outcome']} للطرد {parcel.display_id}"), request=request)
         queryset = MaystroOrder.objects.select_related("shipment__order").prefetch_related("calls__user")
         return Response(SuiviParcelSerializer(queryset.get(pk=pk)).data)
 
@@ -265,5 +265,5 @@ class OutcomeView(APIView):
         data = serializer.validated_data
         handler = record_confirmation if data["stage"] == "confirm" else record_suivi
         order = handler(order.pk, data["outcome"], request.user, data.get("note", ""), data.get("next_call_at"))
-        audit.record("call_outcome", f"سجّل {data['outcome']} للطلبية {order.reference}", request=request, target=order)
+        audit.record("call_outcome", audit.readable(f"سجّل {data['outcome']} للطلبية {order.reference}"), request=request, target=order)
         return Response(OrderDetailSerializer(order_queryset().get(pk=order.pk)).data)

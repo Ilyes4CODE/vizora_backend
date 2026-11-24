@@ -1,3 +1,4 @@
+from . import audit
 from rest_framework import serializers
 
 from .models import AuditLog, Backup, BusinessProfile, Commune, SecuritySettings, Wilaya
@@ -42,9 +43,27 @@ class SecuritySettingsSerializer(serializers.ModelSerializer):
 
 
 class AuditLogSerializer(serializers.ModelSerializer):
+    actor = serializers.SerializerMethodField()
+    action_label = serializers.SerializerMethodField()
+    group = serializers.SerializerMethodField()
+
     class Meta:
         model = AuditLog
-        fields = ["id", "user", "user_name", "action", "message", "target_type", "target_id", "ip_address", "created_at"]
+        fields = ["id", "user", "user_name", "actor", "action", "action_label", "group", "message", "target_type", "target_id", "ip_address", "created_at"]
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data["message"] = audit.readable(data["message"])
+        return data
+
+    def get_actor(self, obj):
+        return obj.user_name or "النظام"
+
+    def get_action_label(self, obj):
+        return audit.label_of(obj.action)
+
+    def get_group(self, obj):
+        return audit.group_of(obj.action)
 
 
 class BackupSerializer(serializers.ModelSerializer):

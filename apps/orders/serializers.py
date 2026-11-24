@@ -65,6 +65,8 @@ class OrderListSerializer(serializers.ModelSerializer):
     status_label = serializers.CharField(source="get_status_display", read_only=True)
     wilaya_name = serializers.CharField(source="wilaya.name_ar", read_only=True)
     assigned_name = serializers.CharField(source="assigned_to.full_name", read_only=True, default="")
+    confirmed_by_name = serializers.CharField(source="confirmed_by.full_name", read_only=True, default="")
+    shipped_by_name = serializers.CharField(source="shipped_by.full_name", read_only=True, default="")
     products = serializers.SerializerMethodField()
 
     class Meta:
@@ -72,7 +74,8 @@ class OrderListSerializer(serializers.ModelSerializer):
         fields = [
             "id", "reference", "customer_name", "phone", "wilaya", "wilaya_name", "commune", "products",
             "subtotal", "delivery_fee", "total", "status", "status_label", "assigned_to", "assigned_name",
-            "call_attempts", "source", "created_at", "confirmed_at",
+            "call_attempts", "source", "created_at", "confirmed_at", "confirmed_by", "confirmed_by_name", "shipped_by_name",
+            "delivered_at", "returned_at",
         ]
 
     def get_products(self, obj):
@@ -84,13 +87,14 @@ class OrderDetailSerializer(OrderListSerializer):
     events = OrderEventSerializer(many=True, read_only=True)
     delivery_type_label = serializers.CharField(source="get_delivery_type_display", read_only=True)
     campaign_name = serializers.CharField(source="campaign.name", read_only=True, default="")
+    created_by_name = serializers.CharField(source="created_by.full_name", read_only=True, default="")
     shipment = serializers.SerializerMethodField()
 
     class Meta(OrderListSerializer.Meta):
         fields = OrderListSerializer.Meta.fields + [
             "address", "delivery_type", "delivery_type_label", "campaign", "campaign_name", "note",
             "next_call_at", "cancel_reason", "suivi_attempts", "suivi_next_at", "shipped_at",
-            "delivered_at", "returned_at", "cancelled_at", "items", "events", "shipment",
+            "cancelled_at", "items", "events", "shipment", "created_by_name",
         ]
 
     def get_shipment(self, obj):

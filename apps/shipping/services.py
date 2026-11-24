@@ -75,7 +75,8 @@ def send_one(order_id, user, client):
         )
         order.status = OrderStatus.SHIPPING
         order.shipped_at = now
-        order.save(update_fields=["status", "shipped_at"])
+        order.shipped_by = user
+        order.save(update_fields=["status", "shipped_at", "shipped_by"])
         add_event(order, f"أُرسلت إلى Maystro · {shipment.tracking_number}", user=user)
         return shipment
 

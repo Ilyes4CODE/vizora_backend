@@ -2,6 +2,7 @@ from django.urls import path
 from rest_framework.routers import SimpleRouter
 
 from .views import (
+    AuditGroupsView,
     AuditLogView,
     BackupViewSet,
     BusinessProfileView,
@@ -19,4 +20,5 @@ urlpatterns = [
     path("settings/business/", BusinessProfileView.as_view(), name="settings-business"),
     path("settings/security/", SecuritySettingsView.as_view(), name="settings-security"),
     path("audit-log/", AuditLogView.as_view(), name="audit-log"),
+    path("audit-log/groups/", AuditGroupsView.as_view(), name="audit-log-groups"),
 ] + router.urls

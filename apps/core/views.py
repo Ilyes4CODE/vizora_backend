@@ -1,13 +1,16 @@
 from django.db import IntegrityError, transaction
+from django.db.models import Q
 from django.http import FileResponse
 from django.utils import timezone
 from rest_framework import generics, mixins, status, viewsets
 from rest_framework.decorators import action
+from rest_framework.filters import SearchFilter
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from . import audit
+from .dates import day_bounds, parse_day
 from .backups import backup_path, create_backup, delete_backup, restore_backup
 from .exceptions import ApiError, conflict
 from .models import AuditLog, Backup, BusinessProfile, SecuritySettings, Wilaya
@@ -71,11 +74,40 @@ class SecuritySettingsView(SingletonView):
 
 
 class AuditLogView(generics.ListAPIView):
-    section = "security"
-    queryset = AuditLog.objects.all()
+    section = ("security", "team")
     serializer_class = AuditLogSerializer
-    filterset_fields = ["action", "user"]
     search_fields = ["message", "user_name"]
+    filter_backends = [SearchFilter]
+
+    def get_queryset(self):
+        params = self.request.query_params
+        queryset = AuditLog.objects.all()
+        if params.get("user") == "system":
+            queryset = queryset.filter(user__isnull=True, user_name="")
+        elif params.get("user"):
+            queryset = queryset.filter(user_id=params["user"]) if params["user"].isdigit() else queryset.none()
+        if params.get("action"):
+            queryset = queryset.filter(action=params["action"])
+        if params.get("group") in audit.GROUPS:
+            prefixes = audit.GROUPS[params["group"]][1]
+            condition = Q()
+            for prefix in prefixes:
+                condition |= Q(action__startswith=prefix)
+            queryset = queryset.filter(condition)
+        if params.get("date_from"):
+            queryset = queryset.filter(created_at__gte=day_bounds(parse_day(params["date_from"], "date_from"))[0])
+        if params.get("date_to"):
+            queryset = queryset.filter(created_at__lt=day_bounds(parse_day(params["date_to"], "date_to"))[1])
+        if params.get("target_type") and params.get("target_id"):
+            queryset = queryset.filter(target_type=params["target_type"], target_id=params["target_id"])
+        return queryset
+
+
+class AuditGroupsView(APIView):
+    section = ("security", "team")
+
+    def get(self, request):
+        return Response([{"key": key, "label": label} for key, (label, _) in audit.GROUPS.items()])
 
 
 class WilayaViewSet(

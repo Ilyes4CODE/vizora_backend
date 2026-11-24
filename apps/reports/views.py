@@ -10,6 +10,7 @@ from apps.core.dates import month_key, parse_day, parse_month
 from apps.core.excel import workbook_response
 
 from .exports import daily_table, monthly_table, pdf_response
+from .agents import agent_performance
 from .services import daily_report, dashboard, monthly_report
 
 MAX_DAILY_RANGE_DAYS = 366
@@ -44,6 +45,25 @@ class DailyReportView(APIView):
             first_day = parse_month(params.get("month"))
             last_day = date(first_day.year, first_day.month, monthrange(first_day.year, first_day.month)[1])
         return Response({"from": first_day, "to": last_day, "rows": daily_report(first_day, last_day)})
+
+
+class AgentPerformanceView(APIView):
+    section = "team"
+
+    def get(self, request):
+        params = request.query_params
+        if params.get("date_from") or params.get("date_to"):
+            first_day = parse_day(params.get("date_from"), "date_from")
+            last_day = parse_day(params.get("date_to"), "date_to")
+            if last_day < first_day or (last_day - first_day).days > MAX_DAILY_RANGE_DAYS:
+                raise ValidationError({"date_to": "الفترة غير صالحة"})
+        else:
+            first_day = parse_month(params.get("month"))
+            last_day = date(first_day.year, first_day.month, monthrange(first_day.year, first_day.month)[1])
+        user = params.get("user")
+        if user and not user.isdigit():
+            raise ValidationError({"user": "موظف غير صالح"})
+        return Response(agent_performance(first_day, last_day, int(user) if user else None))
 
 
 class ReportExportView(APIView):
